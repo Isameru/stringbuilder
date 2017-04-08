@@ -1,2 +1,3 @@
 # stringbuilder
-Fast, efficient, and convenient alternative to std::stringstream and std::string concatenation.
+
+Currently nothing interesting lies beneath (yet).
