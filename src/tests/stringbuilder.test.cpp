@@ -25,8 +25,7 @@
 
 TEST(stringbuilder, Riddle)
 {
-    auto sb = stringbuilder{};
-    sb << "There are " << 8 << std::string{" bits in a single byte."};
-
+    auto sb = stringbuilder<char>{};
+    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }

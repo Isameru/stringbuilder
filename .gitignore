@@ -27,3 +27,7 @@
 *.exe
 *.out
 *.app
+
+# Visual Studio
+.vs
+x64/Debug
