@@ -23,9 +23,30 @@
 #include <stringbuilder.h>
 #include <gtest/gtest.h>
 
-TEST(stringbuilder, Riddle)
+TEST(stringbuilder, Riddle_InPlace0)
 {
-    auto sb = stringbuilder<char>{};
+    auto sb = stringbuilder<0>{};
     sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
-    EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
+    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
+}
+
+TEST(stringbuilder, Riddle_InPlace1)
+{
+    auto sb = stringbuilder<1>{};
+    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
+}
+
+TEST(stringbuilder, Riddle_InPlace3)
+{
+    auto sb = stringbuilder<3>{};
+    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
+}
+
+TEST(stringbuilder, Riddle_InPlace10)
+{
+    auto sb = stringbuilder<10>{};
+    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
 }

@@ -29,108 +29,171 @@
 #include <memory>
 #include <numeric>
 
-template<typename CharTy = char,
-    typename Alloc = std::allocator<CharTy>>
-class stringbuilder
+namespace detail
 {
-private:
-    struct chunk
+    template<typename CharTy,
+        int inPlaceLength,
+        typename Alloc>
+    class StringBuilder : protected Alloc
     {
-        int reserved;
-        int consumed;
-        std::unique_ptr<CharTy[]> data;
+    private:
+        struct Chunk;
+
+        struct ChunkHeader
+        {
+            Chunk* next;
+            int consumed;
+            int reserved;
+        };
+
+        struct Chunk : public ChunkHeader
+        {
+            CharTy data[1];
+
+            Chunk(int reserve) : ChunkHeader{nullptr, 0, reserve} { }
+        };
+
+        template<int DataLength>
+        struct ChunkInPlace : public ChunkHeader
+        {
+            CharTy data[DataLength];
+
+            ChunkInPlace() : ChunkHeader{nullptr, 0, DataLength} { }
+        };
+     
+        template<>
+        struct ChunkInPlace<0> : public ChunkHeader
+        {
+            ChunkInPlace() : ChunkHeader{nullptr, 0, 0} { }
+        };
+
+        ChunkInPlace<inPlaceLength> headChunk;
+        ChunkHeader* tailChunk{&headChunk};
+
+    public:
+        StringBuilder(const Alloc& alloc = Alloc{}) : Alloc{alloc} {}
+        StringBuilder(const StringBuilder&) = delete;
+        StringBuilder(const StringBuilder&& sb) : chunks(std::move(sb)), alloc{sb.alloc} { }
+
+        StringBuilder& append(CharTy ch)
+        {
+            assert(ch != '\0');
+
+            const auto claimed = claim(1);
+            assert(claimed.second == 1);
+            *(claimed.first) = ch;
+
+            return *this;
+        }
+
+        template<int StrSizeWith0>
+        StringBuilder& append(const CharTy (&str)[StrSizeWith0])
+        {
+            constexpr int StrSize = StrSizeWith0 - 1;
+            assert(str[StrSize] == '\0');
+
+            for (int left = StrSize; left > 0;)
+            {
+                const auto claimed = claim(left);
+                std::copy_n(&str[StrSize - left], claimed.second, claimed.first);
+                left -= claimed.second;
+            }
+
+            return *this;
+        }
+
+        int size() const noexcept
+        {
+            int size = 0;
+            const auto* chunk = reinterpret_cast<const Chunk*>(&headChunk);
+            do {
+                size += chunk->consumed;
+                chunk = chunk->next;
+            } while (chunk != nullptr);
+            return size;
+        }
+
+        auto str() const
+        {
+            const auto size0 = size();
+            auto str = std::basic_string<CharTy>(static_cast<const size_t>(size0), '\0');
+            int consumed = 0;
+            for (const Chunk* chunk = reinterpret_cast<const Chunk*>(&headChunk); chunk != nullptr; chunk = chunk->next)
+            {
+                std::copy_n(&chunk->data[0], chunk->consumed, std::begin(str) + consumed);
+                consumed += chunk->consumed;
+            }
+            return str;
+        }
+
+        template<typename Any>
+        StringBuilder& operator<<(Any&& a)
+        {
+            return append(a);
+        }
+
+    private:
+        std::pair<CharTy*, int> claim(int length)
+        {
+            Chunk* lastChunk = reinterpret_cast<Chunk*>(tailChunk);
+            auto lastChunkLeft = lastChunk->reserved - lastChunk->consumed;
+            assert(lastChunkLeft >= 0);
+            if (lastChunkLeft == 0)
+            {
+                const int newChunkLength = nextChunkSize(lastChunk->reserved);
+                lastChunk->next = reinterpret_cast<Chunk*>(Alloc::allocate(sizeof(ChunkHeader) + sizeof(CharTy) * newChunkLength));
+                tailChunk = lastChunk = new (lastChunk->next) Chunk{newChunkLength};
+                lastChunkLeft = newChunkLength;
+            }
+
+            assert(lastChunkLeft > 0);
+            const int claimed = std::min(lastChunkLeft, length);
+            auto retval = std::make_pair(static_cast<CharTy*>(lastChunk->data) + lastChunk->consumed, claimed);
+            lastChunk->consumed += claimed;
+            return retval;
+        }
+
+        std::pair<CharTy*, int> claim_force(int length)
+        {
+            Chunk* lastChunk = reinterpret_cast<chunk*>(last_chunk);
+            auto lastChunkLeft = lastChunk->reserved - lastChunk->consumed;
+            assert(lastChunkLeft >= 0);
+            if (lastChunkLeft < length)
+            {
+                const int newChunkLength = std::max(length, nextChunkSize(lastChunk->reserved));
+                lastChunk->next = reinterpret_cast<chunk*>(Alloc::allocate(sizeof(ChunkHeader) + sizeof(CharTy) * newChunkLength));
+                tailChunk = lastChunk = new (lastChunk->next) Chunk{newChunkLength};
+                lastChunkLeft = newChunkLength;
+            }
+
+            assert(lastChunkLeft > 0);
+            const int claimed = length;
+            auto retval = std::make_pair(static_cast<CharTy*>(lastChunk->data) + lastChunk->consumed, claimed);
+            lastChunk->consumed += claimed;
+            return retval;
+        }
+
+        int nextChunkSize(int prevChunkSize)
+        {
+            return std::max(prevChunkSize * 2, 64);
+        }
     };
-
-    std::deque<chunk> chunks;
-    Alloc alloc;
-
-public:
-    stringbuilder(const Alloc& alloc_ = Alloc{}) : chunks{}, alloc{alloc_} {}
-    stringbuilder(const stringbuilder&) = delete;
-    stringbuilder(const stringbuilder&& sb) : chunks(std::move(sb)), alloc{sb.alloc} { }
-
-    stringbuilder& append(CharTy ch)
-    {
-        assert(ch != '\0');
-        auto lastChunkIter{chunks.rbegin()};
-        if (lastChunkIter == std::rend(chunks))
-        {
-            const auto newChunkLength = 64;
-            chunks.push_back(chunk{newChunkLength, 0, std::make_unique<CharTy[]>(newChunkLength)});
-            lastChunkIter = chunks.rbegin();
-        }
-        else if (lastChunkIter->consumed == lastChunkIter->reserved)
-        {
-            const auto newChunkLength = 2 * lastChunkIter->reserved;
-            chunks.push_back(chunk{4, 0, std::make_unique<CharTy[]>(4)});
-            lastChunkIter = chunks.rbegin();
-        }
-
-        lastChunkIter->data.get()[lastChunkIter->consumed] = ch;
-        ++lastChunkIter->consumed;
-
-        return *this;
-    }
-
-    template<int StrSizeWith0>
-    stringbuilder& append(const CharTy (&str)[StrSizeWith0])
-    {
-        constexpr int StrSize = StrSizeWith0 - 1;
-        assert(str[StrSize] == '\0');
-
-        for (int left = StrSize; left > 0;)
-        {
-            auto lastChunkIter{chunks.rbegin()};
-            if (lastChunkIter == std::rend(chunks))
-            {
-                const auto newChunkLength = 64;
-                chunks.push_back(chunk{newChunkLength, 0, std::make_unique<CharTy[]>(newChunkLength)});
-                lastChunkIter = chunks.rbegin();
-            }
-            else if (lastChunkIter->consumed == lastChunkIter->reserved)
-            {
-                const auto newChunkLength = 2 * lastChunkIter->reserved;
-                chunks.push_back(chunk{4, 0, std::make_unique<CharTy[]>(4)});
-                lastChunkIter = chunks.rbegin();
-            }
-
-            const auto chunkLeft{lastChunkIter->reserved - lastChunkIter->consumed};
-            const auto toCopy{std::min(left, chunkLeft)};
-
-            std::copy_n(&str[StrSize - left], toCopy, lastChunkIter->data.get() + lastChunkIter->consumed);
-
-            left -= toCopy;
-            lastChunkIter->consumed += toCopy;
-        }
-
-        return *this;
-    }
-
-    auto str() const
-    {
-        auto length = std::accumulate(std::begin(chunks), std::end(chunks), int{0}, [](const int& count, const chunk& chunk) { return count + chunk.consumed; });
-        auto str = std::basic_string<CharTy>(static_cast<const size_t>(length), '\0');
-        int consumed = 0;
-        for (const chunk& chunk : chunks)
-        {
-            std::copy_n(chunk.data.get(), chunk.consumed, std::begin(str) + consumed);
-            consumed += chunk.consumed;
-        }
-        return str;
-    }
-
-    template<typename Any>
-    stringbuilder& operator<<(Any&& a)
-    {
-        return append(a);
-    }
-};
+}
 
 namespace std
 {
     template<typename... Any>
-    inline string to_string(const stringbuilder<Any...>& sb)
+    inline string to_string(const detail::StringBuilder<Any...>& sb) noexcept
     {
         return sb.str();
     }
 }
+
+template<typename CharTy, int InPlaceSize, typename Alloc>
+using basic_stringbuilder = detail::StringBuilder<CharTy, InPlaceSize, Alloc>;
+
+template<int InPlaceSize, typename Alloc = std::allocator<char>>
+using stringbuilder = basic_stringbuilder<char, InPlaceSize, Alloc>;
+
+template<int InPlaceSize, typename Alloc = std::allocator<wchar_t>>
+using wstringbuilder = basic_stringbuilder<wchar_t, InPlaceSize, Alloc>;
