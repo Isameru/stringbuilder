@@ -42,7 +42,7 @@ namespace detail
 
         struct ChunkHeader
         {
-			Chunk* next;
+            Chunk* next;
             int consumed;
             int reserved;
         };
@@ -57,24 +57,24 @@ namespace detail
         template<int DataLength>
         struct ChunkInPlace : public ChunkHeader
         {
-			std::array<CharTy, DataLength> data;
+            std::array<CharTy, DataLength> data;
 
             ChunkInPlace() : ChunkHeader{nullptr, 0, DataLength} { }
         };
-     
+
         template<>
         struct ChunkInPlace<0> : public ChunkHeader
         {
-			ChunkInPlace() : ChunkHeader{nullptr, 0, 0} { }
+            ChunkInPlace() : ChunkHeader{nullptr, 0, 0} { }
         };
 
         ChunkInPlace<InPlaceSize> headChunkInPlace;
-		Chunk* tailChunk = headChunk();
+        Chunk* tailChunk = headChunk();
 
     public:
         basic_stringbuilder(const Alloc& alloc = Alloc{}) : Alloc{alloc} {}
         basic_stringbuilder(const basic_stringbuilder&) = delete;
-		basic_stringbuilder(basic_stringbuilder&& sb) = default;
+        basic_stringbuilder(basic_stringbuilder&& sb) = default;
 
         basic_stringbuilder& append(CharTy ch)
         {
@@ -134,11 +134,11 @@ namespace detail
         }
 
     private:
-		Chunk* headChunk()
-		{ return reinterpret_cast<Chunk*>(&headChunkInPlace); }
+        Chunk* headChunk()
+        { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
 
-		const Chunk* headChunk() const
-		{ return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
+        const Chunk* headChunk() const
+        { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
 
         std::pair<CharTy*, int> claim(int length, int minimum)
         {
@@ -146,8 +146,8 @@ namespace detail
             assert(tailChunkLeft >= 0);
             if (tailChunkLeft < minimum)
             {
-				const int newChunkLength = std::max(minimum, determineNextChunkSize());
-				tailChunk->next = reinterpret_cast<Chunk*>(Alloc::allocate(sizeof(ChunkHeader) + sizeof(CharTy) * newChunkLength));
+                const int newChunkLength = std::max(minimum, determineNextChunkSize());
+                tailChunk->next = reinterpret_cast<Chunk*>(Alloc::allocate(sizeof(ChunkHeader) + sizeof(CharTy) * newChunkLength));
                 tailChunk = new (tailChunk->next) Chunk{newChunkLength};
                 tailChunkLeft = newChunkLength;
             }
@@ -155,12 +155,12 @@ namespace detail
             assert(tailChunkLeft >= minimum);
             const int claimed = std::min(tailChunkLeft, length);
             auto retval = std::make_pair(static_cast<CharTy*>(tailChunk->data) + tailChunk->consumed, claimed);
-			tailChunk->consumed += claimed;
+            tailChunk->consumed += claimed;
             return retval;
         }
 
-		int determineNextChunkSize() const
-		{ return (2 * tailChunk->reserved + 63) / 64 * 64; }
+        int determineNextChunkSize() const
+        { return (2 * tailChunk->reserved + 63) / 64 * 64; }
     };
 }
 
