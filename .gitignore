@@ -31,3 +31,6 @@
 # Visual Studio
 .vs
 x64/Debug
+
+# CMake
+CMakeSettings.json

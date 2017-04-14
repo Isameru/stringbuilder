@@ -25,28 +25,28 @@
 
 TEST(stringbuilder, Riddle_InPlace0)
 {
-    auto sb = stringbuilder<0>{};
+	auto sb = stringbuilder<0>{};
     sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
-    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
+    EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
 TEST(stringbuilder, Riddle_InPlace1)
 {
-    auto sb = stringbuilder<1>{};
+	auto sb = stringbuilder<1>{};
     sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
-    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
-}
-
-TEST(stringbuilder, Riddle_InPlace3)
-{
-    auto sb = stringbuilder<3>{};
-    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
-    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
+    EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
 TEST(stringbuilder, Riddle_InPlace10)
 {
-    auto sb = stringbuilder<10>{};
+	auto sb = stringbuilder<10>{};
     sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
-    EXPECT_EQ(sb.str(), "There are 8 bits in a single byte.");
+    EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
+}
+
+TEST(stringbuilder, Riddle_InPlace100)
+{
+    stringbuilder<100> sb;
+    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
