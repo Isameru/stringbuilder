@@ -32,12 +32,57 @@
 
 namespace detail
 {
+    // Provides means for building size-delimited strings in-place.
+    // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
+    // In debug mode appending ensures that the built string does not exceed the available space.
+    // In release mode no such checks are made thus dangerous memory corruption may occur if used incorrectly.
+    //
+    template<typename CharTy,
+        int InPlaceSize>
+    class basic_inplace_stringbuilder
+    {
+        int consumed = 0;
+        std::array<CharTy, InPlaceSize> data; // Last character is reserved for '\0'.
+
+    public:
+        basic_inplace_stringbuilder& append(CharTy ch)
+        {
+            assert(ch != '\n');
+            assert(consumed + 1 < InPlaceSize);
+            data[consumed++] = ch;
+            return *this;
+        }
+
+        template<int StrSizeWith0>
+        basic_inplace_stringbuilder& append(const CharTy (&str)[StrSizeWith0])
+        {
+            assert(consumed + StrSizeWith0 <= InPlaceSize);
+            std::copy_n(&str[0], StrSizeWith0 - 1, std::begin(data) + consumed);
+            consumed += StrSizeWith0 - 1;
+            return *this;
+        }
+
+        auto str() const
+        {
+            assert(consumed < InPlaceSize);
+            const auto b = data.cbegin();
+            return std::basic_string<CharTy>(b, b + consumed);
+        }
+
+        template<typename Any>
+        basic_inplace_stringbuilder& operator<<(Any&& a)
+        {
+            return append(std::forward<Any>(a));
+        }
+    };
+
+    // ...
+    //
     template<typename CharTy,
         int InPlaceSize,
         typename Alloc>
     class basic_stringbuilder : protected Alloc
     {
-    private:
         struct Chunk;
 
         struct ChunkHeader
@@ -49,7 +94,7 @@ namespace detail
 
         struct Chunk : public ChunkHeader
         {
-            CharTy data[1]; // In practice there are ChunkHeader::reserved elements.
+            CharTy data[1]; // In practice there are (ChunkHeader::reserved) of characters in this array.
 
             Chunk(int reserve) : ChunkHeader{nullptr, 0, reserve} { }
         };
@@ -166,12 +211,24 @@ namespace detail
 
 namespace std
 {
+    template<typename CharTy, int InPlaceSize>
+    inline auto to_string(const detail::basic_inplace_stringbuilder<CharTy, InPlaceSize>& sb)
+    {
+        return sb.str();
+    }
+
     template<typename CharTy, int InPlaceSize, typename Alloc>
     inline auto to_string(const detail::basic_stringbuilder<CharTy, InPlaceSize, Alloc>& sb)
     {
         return sb.str();
     }
 }
+
+template<int InPlaceSize>
+using inplace_stringbuilder = detail::basic_inplace_stringbuilder<char, InPlaceSize>;
+
+template<int InPlaceSize>
+using inplace_wstringbuilder = detail::basic_inplace_stringbuilder<wchar_t, InPlaceSize>;
 
 template<int InPlaceSize, typename Alloc = std::allocator<char>>
 using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Alloc>;

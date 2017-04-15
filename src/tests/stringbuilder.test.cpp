@@ -23,6 +23,14 @@
 #include <stringbuilder.h>
 #include <gtest/gtest.h>
 
+TEST(stringbuilder, InPlaceStringBuilder_Riddle)
+{
+    auto sb = inplace_stringbuilder<35>{};
+    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
+}
+
+
 TEST(stringbuilder, Riddle_InPlace0)
 {
     auto sb = stringbuilder<0>{};
