@@ -38,7 +38,8 @@ namespace detail
     // In release mode no such checks are made thus dangerous memory corruption may occur if used incorrectly.
     //
     template<typename CharTy,
-        int InPlaceSize>
+        int InPlaceSize,
+        bool Forward>
     class basic_inplace_stringbuilder
     {
         int consumed = 0;
@@ -47,9 +48,13 @@ namespace detail
     public:
         basic_inplace_stringbuilder& append(CharTy ch)
         {
-            assert(ch != '\n');
+            assert(ch != '\0');
             assert(consumed + 1 < InPlaceSize);
-            data[consumed++] = ch;
+            if (Forward) {
+                data[consumed++] = ch;
+            } else {
+                data[InPlaceSize - 1 - (++consumed)] = ch;
+            }
             return *this;
         }
 
@@ -57,7 +62,11 @@ namespace detail
         basic_inplace_stringbuilder& append(const CharTy (&str)[StrSizeWith0])
         {
             assert(consumed + StrSizeWith0 <= InPlaceSize);
-            std::copy_n(&str[0], StrSizeWith0 - 1, std::begin(data) + consumed);
+            if (Forward) {
+                std::copy_n(&str[0], StrSizeWith0 - 1, std::begin(data) + consumed);
+            } else {
+                std::copy_n(&str[0], StrSizeWith0 - 1, std::begin(data) + InPlaceSize - StrSizeWith0 - consumed);
+            }
             consumed += StrSizeWith0 - 1;
             return *this;
         }
@@ -66,7 +75,11 @@ namespace detail
         {
             assert(consumed < InPlaceSize);
             const auto b = data.cbegin();
-            return std::basic_string<CharTy>(b, b + consumed);
+            if (Forward) {
+                return std::basic_string<CharTy>(b, b + consumed);
+            } else {
+                return std::basic_string<CharTy>(b + InPlaceSize - 1 - consumed, b + InPlaceSize - 1);
+            }
         }
 
         template<typename Any>
@@ -211,8 +224,8 @@ namespace detail
 
 namespace std
 {
-    template<typename CharTy, int InPlaceSize>
-    inline auto to_string(const detail::basic_inplace_stringbuilder<CharTy, InPlaceSize>& sb)
+    template<typename CharTy, int InPlaceSize, bool Forward>
+    inline auto to_string(const detail::basic_inplace_stringbuilder<CharTy, InPlaceSize, Forward>& sb)
     {
         return sb.str();
     }
@@ -224,11 +237,11 @@ namespace std
     }
 }
 
-template<int InPlaceSize>
-using inplace_stringbuilder = detail::basic_inplace_stringbuilder<char, InPlaceSize>;
+template<int InPlaceSize, bool Forward = true>
+using inplace_stringbuilder = detail::basic_inplace_stringbuilder<char, InPlaceSize, Forward>;
 
-template<int InPlaceSize>
-using inplace_wstringbuilder = detail::basic_inplace_stringbuilder<wchar_t, InPlaceSize>;
+template<int InPlaceSize, bool Forward = true>
+using inplace_wstringbuilder = detail::basic_inplace_stringbuilder<wchar_t, InPlaceSize, Forward>;
 
 template<int InPlaceSize, typename Alloc = std::allocator<char>>
 using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Alloc>;

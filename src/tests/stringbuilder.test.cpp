@@ -30,6 +30,13 @@ TEST(stringbuilder, InPlaceStringBuilder_Riddle)
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
+TEST(stringbuilder, InPlaceStringBuilder_Riddle_Reversed)
+{
+    auto sb = inplace_stringbuilder<35, false>{};
+    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    EXPECT_EQ(std::to_string(sb), ".single byte bits in a 8are  There");
+}
+
 
 TEST(stringbuilder, Riddle_InPlace0)
 {
