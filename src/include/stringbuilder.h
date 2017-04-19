@@ -29,24 +29,53 @@
 #include <deque>
 #include <memory>
 #include <numeric>
+#include <type_traits>
 
 namespace detail
 {
+    // The following code is based on ebo_helper explained in this talk:
+    // https://youtu.be/hHQS-Q7aMzg?t=3039
+    //
+    template<typename OrigAlloc, bool UseEbo = !std::is_final_v<OrigAlloc> && std::is_empty_v<OrigAlloc>>
+    struct raw_alloc_provider;
+
+    template<typename OrigAlloc>
+    struct raw_alloc_provider<OrigAlloc, true> : private std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>
+    {
+        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
+
+        template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : AllocRebound{std::forward<AllocRebound>(otherAlloc)} {}
+        constexpr AllocRebound& get_rebound_allocator() { return *this; }
+        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{*this}; }
+    };
+
+    template<typename OrigAlloc>
+    struct raw_alloc_provider<OrigAlloc, false>
+    {
+        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
+
+        template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : alloc_rebound{ std::forward<AllocRebound>(otherAlloc) } {}
+        constexpr AllocRebound& get_rebound_allocator() { return alloc_rebound; }
+        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{alloc_rebound}; }
+    private:
+        AllocRebound alloc_rebound;
+    };
+
     // Provides means for building size-delimited strings in-place.
     // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
     // In debug mode appending ensures that the built string does not exceed the available space.
     // In release mode no such checks are made thus dangerous memory corruption may occur if used incorrectly.
     //
-    template<typename CharTy,
+    template<typename Char,
         int InPlaceSize,
         bool Forward>
     class basic_inplace_stringbuilder
     {
         int consumed = 0;
-        std::array<CharTy, InPlaceSize> data; // Last character is reserved for '\0'.
+        std::array<Char, InPlaceSize> data; // Last character is reserved for '\0'.
 
     public:
-        basic_inplace_stringbuilder& append(CharTy ch)
+        basic_inplace_stringbuilder& append(Char ch)
         {
             assert(ch != '\0');
             assert(consumed + 1 < InPlaceSize);
@@ -59,7 +88,7 @@ namespace detail
         }
 
         template<int StrSizeWith0>
-        basic_inplace_stringbuilder& append(const CharTy (&str)[StrSizeWith0])
+        basic_inplace_stringbuilder& append(const Char (&str)[StrSizeWith0])
         {
             assert(consumed + StrSizeWith0 <= InPlaceSize);
             if (Forward) {
@@ -76,9 +105,9 @@ namespace detail
             assert(consumed < InPlaceSize);
             const auto b = data.cbegin();
             if (Forward) {
-                return std::basic_string<CharTy>(b, b + consumed);
+                return std::basic_string<Char>(b, b + consumed);
             } else {
-                return std::basic_string<CharTy>(b + InPlaceSize - 1 - consumed, b + InPlaceSize - 1);
+                return std::basic_string<Char>(b + InPlaceSize - 1 - consumed, b + InPlaceSize - 1);
             }
         }
 
@@ -91,11 +120,15 @@ namespace detail
 
     // ...
     //
-    template<typename CharTy,
+    template<typename Char,
         int InPlaceSize,
-        typename Alloc>
-    class basic_stringbuilder : protected Alloc
+        typename AllocOrig>
+    class basic_stringbuilder : private raw_alloc_provider<AllocOrig>
     {
+        using AllocProvider = raw_alloc_provider<AllocOrig>;
+        using Alloc = typename AllocProvider::AllocRebound;
+        using AllocTraits = std::allocator_traits<Alloc>;
+
         struct Chunk;
 
         struct ChunkHeader
@@ -107,7 +140,7 @@ namespace detail
 
         struct Chunk : public ChunkHeader
         {
-            CharTy data[1]; // In practice there are (ChunkHeader::reserved) of characters in this array.
+            Char data[1]; // In practice there are (ChunkHeader::reserved) of characters in this array.
 
             Chunk(int reserve) : ChunkHeader{nullptr, 0, reserve} { }
         };
@@ -115,7 +148,7 @@ namespace detail
         template<int DataLength>
         struct ChunkInPlace : public ChunkHeader
         {
-            std::array<CharTy, DataLength> data;
+            std::array<Char, DataLength> data;
 
             ChunkInPlace() : ChunkHeader{nullptr, 0, DataLength} { }
         };
@@ -130,11 +163,37 @@ namespace detail
         Chunk* tailChunk = headChunk();
 
     public:
-        basic_stringbuilder(const Alloc& alloc = Alloc{}) : Alloc{alloc} {}
-        basic_stringbuilder(const basic_stringbuilder&) = delete;
-        basic_stringbuilder(basic_stringbuilder&& sb) = default;
+        using value_type = Char;
+        using allocator_type = AllocOrig;
+        using size_type = int;
+        using difference_type = int;
+        using reference = Char&;
+        using const_reference = const Char&;
+        using pointer = Char*;
+        using const_pointer = const Char*;
 
-        basic_stringbuilder& append(CharTy ch)
+        constexpr AllocOrig& get_allocator() noexcept
+        {
+            return get_original_allocator();
+        }
+
+        template<typename AllocOther = Alloc>
+        basic_stringbuilder(AllocOther&& allocOther = AllocOther{}) noexcept : AllocProvider{std::forward<AllocOther>(allocOther)} {}
+        basic_stringbuilder(const basic_stringbuilder&) = delete;
+        basic_stringbuilder(basic_stringbuilder&& sb) noexcept = default;
+
+        ~basic_stringbuilder()
+        {
+            Chunk* nextChunk = headChunk()->next;
+            for (auto chunk = nextChunk; chunk != nullptr; chunk = nextChunk)
+            {
+                nextChunk = chunk->next;
+                //AllocTraits::destroy...?
+                AllocTraits::deallocate(get_rebound_allocator(), reinterpret_cast<AllocTraits::pointer>(chunk), sizeof(ChunkHeader) + chunk->reserved);
+            }
+        }
+
+        basic_stringbuilder& append(Char ch)
         {
             assert(ch != '\0');
 
@@ -146,7 +205,7 @@ namespace detail
         }
 
         template<int StrSizeWith0>
-        basic_stringbuilder& append(const CharTy (&str)[StrSizeWith0])
+        basic_stringbuilder& append(const Char (&str)[StrSizeWith0])
         {
             constexpr int StrSize = StrSizeWith0 - 1;
             assert(str[StrSize] == '\0');
@@ -175,7 +234,7 @@ namespace detail
         auto str() const
         {
             const auto size0 = size();
-            auto str = std::basic_string<CharTy>(static_cast<const size_t>(size0), '\0');
+            auto str = std::basic_string<Char>(static_cast<const size_t>(size0), '\0');
             int consumed = 0;
             for (const Chunk* chunk = headChunk(); chunk != nullptr; chunk = chunk->next)
             {
@@ -192,27 +251,35 @@ namespace detail
         }
 
     private:
+        Chunk* allocChunk(int reserve)
+        {
+            const auto chunkTotalSize = (63 + sizeof(ChunkHeader) + sizeof(Char) * reserve) / 64 * 64;
+            auto* rawChunk = AllocTraits::allocate(get_rebound_allocator(), chunkTotalSize, tailChunk);
+            AllocTraits::construct<Chunk>(get_rebound_allocator(), rawChunk, chunkTotalSize - sizeof(ChunkHeader));
+            return reinterpret_cast<Chunk*>(rawChunk);
+        }
+
         Chunk* headChunk()
         { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
 
         const Chunk* headChunk() const
         { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
 
-        std::pair<CharTy*, int> claim(int length, int minimum)
+        std::pair<Char*, int> claim(int length, int minimum)
         {
             auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
             assert(tailChunkLeft >= 0);
             if (tailChunkLeft < minimum)
             {
                 const int newChunkLength = std::max(minimum, determineNextChunkSize());
-                tailChunk->next = reinterpret_cast<Chunk*>(Alloc::allocate(sizeof(ChunkHeader) + sizeof(CharTy) * newChunkLength));
+                tailChunk->next = reinterpret_cast<Chunk*>(get_allocator().allocate(sizeof(ChunkHeader) + sizeof(Char) * newChunkLength));
                 tailChunk = new (tailChunk->next) Chunk{newChunkLength};
                 tailChunkLeft = newChunkLength;
             }
 
             assert(tailChunkLeft >= minimum);
             const int claimed = std::min(tailChunkLeft, length);
-            auto retval = std::make_pair(static_cast<CharTy*>(tailChunk->data) + tailChunk->consumed, claimed);
+            auto retval = std::make_pair(static_cast<Char*>(tailChunk->data) + tailChunk->consumed, claimed);
             tailChunk->consumed += claimed;
             return retval;
         }
@@ -224,14 +291,14 @@ namespace detail
 
 namespace std
 {
-    template<typename CharTy, int InPlaceSize, bool Forward>
-    inline auto to_string(const detail::basic_inplace_stringbuilder<CharTy, InPlaceSize, Forward>& sb)
+    template<typename Char, int InPlaceSize, bool Forward>
+    inline auto to_string(const detail::basic_inplace_stringbuilder<Char, InPlaceSize, Forward>& sb)
     {
         return sb.str();
     }
 
-    template<typename CharTy, int InPlaceSize, typename Alloc>
-    inline auto to_string(const detail::basic_stringbuilder<CharTy, InPlaceSize, Alloc>& sb)
+    template<typename Char, int InPlaceSize, typename Alloc>
+    inline auto to_string(const detail::basic_stringbuilder<Char, InPlaceSize, Alloc>& sb)
     {
         return sb.str();
     }
