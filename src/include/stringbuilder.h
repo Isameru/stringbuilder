@@ -255,8 +255,9 @@ namespace detail
         {
             const auto chunkTotalSize = (63 + sizeof(ChunkHeader) + sizeof(Char) * reserve) / 64 * 64;
             auto* rawChunk = AllocTraits::allocate(get_rebound_allocator(), chunkTotalSize, tailChunk);
-            AllocTraits::construct<Chunk>(get_rebound_allocator(), rawChunk, chunkTotalSize - sizeof(ChunkHeader));
-            return reinterpret_cast<Chunk*>(rawChunk);
+            auto* chunk = reinterpret_cast<Chunk*>(rawChunk);
+            AllocTraits::construct<Chunk>(get_rebound_allocator(), chunk, chunkTotalSize - sizeof(ChunkHeader));
+            return chunk;
         }
 
         Chunk* headChunk()
@@ -272,8 +273,8 @@ namespace detail
             if (tailChunkLeft < minimum)
             {
                 const int newChunkLength = std::max(minimum, determineNextChunkSize());
-                tailChunk->next = reinterpret_cast<Chunk*>(get_allocator().allocate(sizeof(ChunkHeader) + sizeof(Char) * newChunkLength));
-                tailChunk = new (tailChunk->next) Chunk{newChunkLength};
+                tailChunk = tailChunk->next = allocChunk(newChunkLength);
+                assert(newChunkLength <= tailChunk->reserved);
                 tailChunkLeft = newChunkLength;
             }
 
