@@ -122,25 +122,22 @@ namespace detail
             return append(ss.str_view());
         }
 
-        template<typename Any>
-        basic_inplace_stringbuilder& append(const Any& a) noexcept
+        template<typename AnyT>
+        basic_inplace_stringbuilder& append(const AnyT& any) noexcept
         {
-            return append(std::to_string(a));
+            return append(std::to_string(any));
         }
 
         template<typename IntegerT, typename = std::enable_if<Forward>>
         void encodeBackwards(IntegerT iv)
         {
-            if (iv >= 0)
-            {
+            if (iv >= 0) {
                 do {
                     auto divres = std::div(iv, IntegerT{10});
                     append(static_cast<char_type>('0' + divres.rem));
                     iv = divres.quot;
                 } while (iv > 0);
-            }
-            else
-            {
+            } else {
                 do {
                     auto divres = std::div(iv, IntegerT{10});
                     append(static_cast<char_type>('0' - divres.rem));
@@ -195,6 +192,7 @@ namespace detail
             const_cast<char_type&>(data_[Forward ? consumed : MaxSize]) = '\0';
         }
 
+    private:
         size_type consumed = 0;
         std::array<char_type, MaxSize + 1> data_; // Last character is reserved for '\0'.
     };
@@ -227,12 +225,13 @@ namespace detail
         AllocRebound alloc_rebound;
     };
 
-    // Provides means for building strings.
+    // Provides means for efficient construction of strings.
     // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings.
-    // If the available space exhausts, new chunks of memory are allocated on heap.
+    // If the available space gets exhausted, new chunks of memory are allocated on heap.
     //
     template<typename Char,
-        int InPlaceSize,
+        size_t InPlaceSize,
+        typename Traits,
         typename AllocOrig>
     class basic_stringbuilder : private raw_alloc_provider<AllocOrig>
     {
@@ -240,26 +239,38 @@ namespace detail
         using Alloc = typename AllocProvider::AllocRebound;
         using AllocTraits = std::allocator_traits<Alloc>;
 
+    public:
+        using char_type = Char;
+        using value_type = char_type;
+        using allocator_type = AllocOrig;
+        using size_type = size_t;
+        using difference_type = std::ptrdiff_t;
+        using reference = char_type&;
+        using const_reference = const char_type&;
+        using pointer = char_type*;
+        using const_pointer = const char_type*;
+
+    private:
         struct Chunk;
 
         struct ChunkHeader
         {
             Chunk* next;
-            int consumed;
-            int reserved;
+            size_type consumed;
+            size_type reserved;
         };
 
         struct Chunk : public ChunkHeader
         {
-            Char data[1]; // In practice there are (ChunkHeader::reserved) of characters in this array.
+            char_type data[1]; // In practice there are ChunkHeader::reserved of characters in this array.
 
-            Chunk(int reserve) : ChunkHeader{nullptr, 0, reserve} { }
+            Chunk(size_type reserve) : ChunkHeader{nullptr, size_type{0}, reserve} { }
         };
 
         template<int DataLength>
         struct ChunkInPlace : public ChunkHeader
         {
-            std::array<Char, DataLength> data;
+            std::array<char_type, DataLength> data;
 
             ChunkInPlace() : ChunkHeader{nullptr, 0, DataLength} { }
         };
@@ -270,28 +281,20 @@ namespace detail
             ChunkInPlace() : ChunkHeader{nullptr, 0, 0} { }
         };
 
-        ChunkInPlace<InPlaceSize> headChunkInPlace;
-        Chunk* tailChunk = headChunk();
-
     public:
-        using value_type = Char;
-        using allocator_type = AllocOrig;
-        using size_type = int;
-        using difference_type = int;
-        using reference = Char&;
-        using const_reference = const Char&;
-        using pointer = Char*;
-        using const_pointer = const Char*;
-
-        constexpr AllocOrig& get_allocator() noexcept
-        {
-            return get_original_allocator();
-        }
+        constexpr AllocOrig& get_allocator() noexcept { return get_original_allocator(); }
 
         template<typename AllocOther = Alloc>
         basic_stringbuilder(AllocOther&& allocOther = AllocOther{}) noexcept : AllocProvider{std::forward<AllocOther>(allocOther)} {}
+
         basic_stringbuilder(const basic_stringbuilder&) = delete;
-        basic_stringbuilder(basic_stringbuilder&& sb) noexcept = default;
+
+        basic_stringbuilder(basic_stringbuilder&& sb) noexcept :
+            headChunkInPlace{sb.headChunkInPlace},
+            tailChunk{sb.tailChunk}
+        {
+            sb.headChunkInPlace.next = nullptr;
+        }
 
         ~basic_stringbuilder()
         {
@@ -304,36 +307,9 @@ namespace detail
             }
         }
 
-        basic_stringbuilder& append(Char ch)
+        size_type size() const noexcept
         {
-            assert(ch != '\0');
-
-            const auto claimed = claim(1, 1);
-            assert(claimed.second == 1);
-            *(claimed.first) = ch;
-
-            return *this;
-        }
-
-        template<int StrSizeWith0>
-        basic_stringbuilder& append(const Char (&str)[StrSizeWith0])
-        {
-            constexpr int StrSize = StrSizeWith0 - 1;
-            assert(str[StrSize] == '\0');
-
-            for (int left = StrSize; left > 0;)
-            {
-                const auto claimed = claim(left, 1);
-                std::copy_n(&str[StrSize - left], claimed.second, claimed.first);
-                left -= claimed.second;
-            }
-
-            return *this;
-        }
-
-        int size() const noexcept
-        {
-            int size = 0;
+            size_type size = 0;
             const auto* chunk = headChunk();
             do {
                 size += chunk->consumed;
@@ -342,27 +318,46 @@ namespace detail
             return size;
         }
 
+        size_type length() const noexcept { return size(); }
+
+        basic_stringbuilder& append(Char ch)
+        {
+            assert(ch != '\0');
+            claimOne() = ch;
+            return *this;
+        }
+
+        template<size_type StrSizeWith0>
+        basic_stringbuilder& append(const Char(&str)[StrSizeWith0])
+        {
+            constexpr size_type StrSize = StrSizeWith0 - 1;
+            assert(str[StrSize] == '\0');
+            for (auto left = StrSize; left > 0;)
+            {
+                const auto claimed = claim(left, 1);
+                Traits::copy(claimed.first, &str[StrSize - left], claimed.second);
+                left -= claimed.second;
+            }
+            return *this;
+        }
+
         auto str() const
         {
             const auto size0 = size();
-            auto str = std::basic_string<Char>(static_cast<const size_t>(size0), '\0');
-            int consumed = 0;
+            auto str = std::basic_string<Char>(static_cast<const size_type>(size0), '\0');
+            size_type consumed = 0;
             for (const Chunk* chunk = headChunk(); chunk != nullptr; chunk = chunk->next)
             {
-                std::copy_n(&chunk->data[0], chunk->consumed, std::begin(str) + consumed);
+                Traits::copy(str.data() + consumed, chunk->data,  chunk->consumed);
                 consumed += chunk->consumed;
             }
             return str;
         }
 
-        template<typename Any>
-        basic_stringbuilder& operator<<(Any&& a)
-        {
-            return append(std::forward<Any>(a));
-        }
+        template<typename AnyT> basic_stringbuilder& operator<<(AnyT&& any) { return append(std::forward<AnyT>(any)); }
 
     private:
-        Chunk* allocChunk(int reserve)
+        Chunk* allocChunk(size_type reserve)
         {
             const auto chunkTotalSize = (63 + sizeof(ChunkHeader) + sizeof(Char) * reserve) / 64 * 64;
             auto* rawChunk = AllocTraits::allocate(get_rebound_allocator(), chunkTotalSize, tailChunk);
@@ -371,33 +366,46 @@ namespace detail
             return chunk;
         }
 
-        Chunk* headChunk()
-        { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
+        Chunk* headChunk() noexcept { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
+        const Chunk* headChunk() const noexcept { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
 
-        const Chunk* headChunk() const
-        { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
-
-        std::pair<Char*, int> claim(int length, int minimum)
+        std::pair<Char*, size_type> claim(size_type length, size_type minimum)
         {
             auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
             assert(tailChunkLeft >= 0);
             if (tailChunkLeft < minimum)
             {
-                const int newChunkLength = std::max(minimum, determineNextChunkSize());
+                const size_type newChunkLength = std::max(minimum, determineNextChunkSize());
                 tailChunk = tailChunk->next = allocChunk(newChunkLength);
                 assert(newChunkLength <= tailChunk->reserved);
                 tailChunkLeft = newChunkLength;
             }
 
             assert(tailChunkLeft >= minimum);
-            const int claimed = std::min(tailChunkLeft, length);
+            const size_type claimed = std::min(tailChunkLeft, length);
             auto retval = std::make_pair(static_cast<Char*>(tailChunk->data) + tailChunk->consumed, claimed);
             tailChunk->consumed += claimed;
             return retval;
         }
 
-        int determineNextChunkSize() const
-        { return (2 * tailChunk->reserved + 63) / 64 * 64; }
+        Char& claimOne()
+        {
+            auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
+            assert(tailChunkLeft >= 0);
+            if (tailChunkLeft < 1)
+            {
+                const size_type newChunkLength = determineNextChunkSize();
+                tailChunk = tailChunk->next = allocChunk(newChunkLength);
+                assert(newChunkLength <= tailChunk->reserved);
+            }
+            return *(static_cast<Char*>(tailChunk->data) + tailChunk->consumed++);
+        }
+
+        size_type determineNextChunkSize() const noexcept { return (2 * tailChunk->reserved + 63) / 64 * 64; }
+
+    private:
+        ChunkInPlace<InPlaceSize> headChunkInPlace;
+        Chunk* tailChunk = headChunk();
     };
 }
 
@@ -409,8 +417,8 @@ namespace std
         return sb.str();
     }
 
-    template<typename Char, int InPlaceSize, typename Alloc>
-    inline auto to_string(const detail::basic_stringbuilder<Char, InPlaceSize, Alloc>& sb)
+    template<typename Char, int InPlaceSize, typename Traits, typename Alloc>
+    inline auto to_string(const detail::basic_stringbuilder<Char, InPlaceSize, Traits, Alloc>& sb)
     {
         return sb.str();
     }
@@ -429,24 +437,36 @@ template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<ch
 using inplace_u32stringbuilder = detail::basic_inplace_stringbuilder<char32_t, MaxSize, Forward, Traits>;
 
 
-template<int InPlaceSize, typename Alloc = std::allocator<char>>
-using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Alloc>;
+template<int InPlaceSize, typename Traits = std::char_traits<char>,typename Alloc = std::allocator<char>>
+using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Traits, Alloc>;
 
-template<int InPlaceSize, typename Alloc = std::allocator<wchar_t>>
-using wstringbuilder = detail::basic_stringbuilder<wchar_t, InPlaceSize, Alloc>;
+template<int InPlaceSize, typename Traits = std::char_traits<wchar_t>, typename Alloc = std::allocator<wchar_t>>
+using wstringbuilder = detail::basic_stringbuilder<wchar_t, InPlaceSize, Traits, Alloc>;
+
+template<int InPlaceSize, typename Traits = std::char_traits<char16_t>, typename Alloc = std::allocator<char16_t>>
+using u16stringbuilder = detail::basic_stringbuilder<char16_t, InPlaceSize, Traits, Alloc>;
+
+template<int InPlaceSize, typename Traits = std::char_traits<char32_t>, typename Alloc = std::allocator<char32_t>>
+using u32wstringbuilder = detail::basic_stringbuilder<char32_t, InPlaceSize, Traits, Alloc>;
 
 
-template<int Size>
-struct sized_str
+template<int ExpectedSize, typename StringT>
+auto sized_str(StringT&& str)
 {
-    std::string str;
-    sized_str(std::string s) : str(std::move(s)) {}
-};
+    return detail::sized_str_t<ExpectedSize, StringT>{ std::forward<StringT>(str) };
+}
 
 namespace detail
 {
     template <typename T>
     struct type {};
+
+    template<int ExpectedSize, typename StringT>
+    struct sized_str_t
+    {
+        StringT str;
+        sized_str_t(StringT s) : str(std::move(s)) {}
+    };
 
     constexpr int estimateTypeSize(type<char>)
     {
@@ -459,10 +479,10 @@ namespace detail
         return StrSizeWith0 - 1;
     }
 
-    template<int StrSize>
-    constexpr int estimateTypeSize(type<sized_str<StrSize>>)
+    template<int ExpectedSize, typename StringT>
+    constexpr int estimateTypeSize(type<sized_str_t<ExpectedSize, StringT>>)
     {
-        return StrSize;
+        return ExpectedSize;
     }
 
     template<typename T>
