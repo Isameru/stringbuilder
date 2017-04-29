@@ -1,6 +1,6 @@
-// MIT License
+﻿// MIT License
 //
-// Copyright (c) 2017 Isameru
+// Copyright (c) 2017 Mariusz Łapiński
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -64,4 +64,17 @@ TEST(stringbuilder, Riddle_InPlace100)
     stringbuilder<100> sb;
     sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
+}
+
+TEST(stringbuilder, MakeString_Simple)
+{
+    EXPECT_EQ(make_string('a', "bcd", 'x'), "abcdx");
+    EXPECT_EQ(make_string("There", ' ', "are ", '8', " bits in a ", "single byte", '.'), "There are 8 bits in a single byte.");
+}
+
+TEST(stringbuilder, MakeStringConstexpr_Simple)
+{
+    constexpr auto a = make_string('a', 'b', 'c');
+    constexpr auto e = std::array<char, 3>{ 'a', 'b', 'c' };
+    EXPECT_EQ(a, e);
 }

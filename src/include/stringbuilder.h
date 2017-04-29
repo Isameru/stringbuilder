@@ -1,6 +1,6 @@
-// MIT License
+﻿// MIT License
 //
-// Copyright (c) 2017 Isameru
+// Copyright (c) 2017 Mariusz Łapiński
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -33,34 +33,6 @@
 
 namespace detail
 {
-    // The following code is based on ebo_helper explained in this talk:
-    // https://youtu.be/hHQS-Q7aMzg?t=3039
-    //
-    template<typename OrigAlloc, bool UseEbo = !std::is_final_v<OrigAlloc> && std::is_empty_v<OrigAlloc>>
-    struct raw_alloc_provider;
-
-    template<typename OrigAlloc>
-    struct raw_alloc_provider<OrigAlloc, true> : private std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>
-    {
-        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
-
-        template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : AllocRebound{std::forward<AllocRebound>(otherAlloc)} {}
-        constexpr AllocRebound& get_rebound_allocator() { return *this; }
-        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{*this}; }
-    };
-
-    template<typename OrigAlloc>
-    struct raw_alloc_provider<OrigAlloc, false>
-    {
-        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
-
-        template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : alloc_rebound{ std::forward<AllocRebound>(otherAlloc) } {}
-        constexpr AllocRebound& get_rebound_allocator() { return alloc_rebound; }
-        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{alloc_rebound}; }
-    private:
-        AllocRebound alloc_rebound;
-    };
-
     // Provides means for building size-delimited strings in-place.
     // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
     // In debug mode appending ensures that the built string does not exceed the available space.
@@ -88,7 +60,7 @@ namespace detail
         }
 
         template<int StrSizeWith0>
-        basic_inplace_stringbuilder& append(const Char (&str)[StrSizeWith0])
+        basic_inplace_stringbuilder& append(const Char(&str)[StrSizeWith0])
         {
             assert(consumed + StrSizeWith0 <= InPlaceSize);
             if (Forward) {
@@ -118,7 +90,37 @@ namespace detail
         }
     };
 
-    // ...
+    // The following code is based on ebo_helper explained in this talk:
+    // https://youtu.be/hHQS-Q7aMzg?t=3039
+    //
+    template<typename OrigAlloc, bool UseEbo = !std::is_final_v<OrigAlloc> && std::is_empty_v<OrigAlloc>>
+    struct raw_alloc_provider;
+
+    template<typename OrigAlloc>
+    struct raw_alloc_provider<OrigAlloc, true> : private std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>
+    {
+        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
+
+        template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : AllocRebound{ std::forward<AllocRebound>(otherAlloc) } {}
+        constexpr AllocRebound& get_rebound_allocator() { return *this; }
+        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{ *this }; }
+    };
+
+    template<typename OrigAlloc>
+    struct raw_alloc_provider<OrigAlloc, false>
+    {
+        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
+
+        template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : alloc_rebound{ std::forward<AllocRebound>(otherAlloc) } {}
+        constexpr AllocRebound& get_rebound_allocator() { return alloc_rebound; }
+        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{ alloc_rebound }; }
+    private:
+        AllocRebound alloc_rebound;
+    };
+
+    // Provides means for building strings.
+    // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings.
+    // If the available space exhausts, new chunks of memory are allocated on heap.
     //
     template<typename Char,
         int InPlaceSize,
@@ -316,3 +318,162 @@ using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Alloc>;
 
 template<int InPlaceSize, typename Alloc = std::allocator<wchar_t>>
 using wstringbuilder = detail::basic_stringbuilder<wchar_t, InPlaceSize, Alloc>;
+
+
+template<int Size>
+struct sized_str
+{
+    std::string str;
+    sized_str(std::string s) : str(std::move(s)) {}
+};
+
+namespace detail
+{
+    template <typename T>
+    struct type {};
+
+    constexpr int estimateTypeSize(type<char>)
+    {
+        return 1;
+    }
+
+    template<int StrSizeWith0>
+    constexpr int estimateTypeSize(type<const char(&)[StrSizeWith0]>)
+    {
+        return StrSizeWith0 - 1;
+    }
+
+    template<int StrSize>
+    constexpr int estimateTypeSize(type<sized_str<StrSize>>)
+    {
+        return StrSize;
+    }
+
+    template<typename T>
+    constexpr int estimateTypeSeqSize(type<T> t)
+    {
+        return estimateTypeSize(t);
+    }
+
+    template<typename T1, typename... TX>
+    constexpr int estimateTypeSeqSize(type<T1> t1, type<TX>... tx)
+    {
+        return estimateTypeSize(t1) + estimateTypeSeqSize(tx...);
+    }
+
+    template<size_t S1, size_t S2, std::size_t... I1, std::size_t... I2>
+    constexpr auto concatenateArrayPair(const std::array<char, S1> arr1, const std::array<char, S2> arr2, std::index_sequence<I1...>, std::index_sequence<I2...>)
+    {
+        return std::array<char, S1 + S2>{ arr1[I1]..., arr2[I2]... };
+    }
+
+    template<size_t S1, size_t S2, size_t... SX>
+    constexpr auto concatenateArrays(const std::array<char, S1> arr1, const std::array<char, S2> arr2, const std::array<char, SX>... arrX)
+    {
+        return concatenateArrays(concatenateArrayPair(arr1, arr2, std::make_index_sequence<arr1.size()>(), std::make_index_sequence<arr2.size()>()), arrX...);
+    }
+
+    template<size_t S1, size_t S2>
+    constexpr auto concatenateArrays(const std::array<char, S1> arr1, const std::array<char, S2> arr2)
+    {
+        return concatenateArrayPair(arr1, arr2, std::make_index_sequence<arr1.size()>(), std::make_index_sequence<arr2.size()>());
+    }
+
+    template<size_t S>
+    constexpr auto concatenateArrays(const std::array<char, S> arr)
+    {
+        return arr;
+    }
+
+    /*
+    template<size_t S, size_t... I>
+    struct CharArrayHelper
+    {
+        char ch[S];
+
+        constexpr CharArrayHelper(const std::array<char, S> arr) :
+            ch{ arr[I]... }
+        { }
+    };
+
+    template<size_t S, size_t... I>
+    constexpr auto toCharArray(const std::array<char, S> arr, std::index_sequence<I...>)
+    {
+        return CharArrayHelper<S, I...> { arr };
+    }
+
+    template<size_t S>
+    constexpr auto toCharArray(const std::array<char, S> arr)
+    {
+        return toCharArray(arr, std::make_index_sequence<S>());
+    }
+    */
+
+    constexpr std::array<char, 1> stringify(char c)
+    {
+        return { c };
+    }
+
+    template<typename T, typename = std::void_t<>>
+    struct CanStringify : std::false_type {};
+
+    template<typename T>
+    struct CanStringify<T, std::void_t<decltype(stringify(std::declval<T>()))>> : std::true_type {};
+
+    template<typename T>
+    constexpr bool canStringify(type<T>)
+    {
+        return CanStringify<T>::value;
+    }
+
+    template<typename T1, typename... TX>
+    constexpr bool canStringify(type<T1>, type<TX>... tx)
+    {
+        return CanStringify<T1>::value && canStringify(tx...);
+    }
+
+    template<typename SS, typename T>
+    SS& append(SS& ss, T&& t)
+    {
+        ss << t;
+        return ss;
+    }
+
+    template<typename SS, typename T1, typename... TX>
+    SS& append(SS& ss, T1&& t1, TX&&... tx)
+    {
+        append(ss, t1);
+        append(ss, tx...);
+        return ss;
+    }
+
+    template<bool Stringify>
+    struct StringMaker
+    {
+        template<typename... TX>
+        constexpr auto operator()(TX&&... vx) const
+        {
+            constexpr int estimatedSize = estimateTypeSeqSize(type<TX>{}...);
+            stringbuilder<estimatedSize> ss;
+            append(ss, vx...);
+            return ss.str();
+        }
+    };
+
+    template<>
+    struct StringMaker<true>
+    {
+        template<typename... TX>
+        constexpr auto operator()(TX&&... vx) const
+        {
+            //return toCharArray(concatenateArrays(stringify(vx)..., stringify('\0')));
+            return concatenateArrays(stringify(vx)...);
+        }
+    };
+}
+
+template<typename... TX>
+constexpr auto make_string(TX&&... vx)
+{
+    return detail::StringMaker<detail::canStringify(detail::type<TX>{}...)>{}(std::forward<TX>(vx)...);
+}
