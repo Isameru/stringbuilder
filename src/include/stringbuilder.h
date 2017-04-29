@@ -30,57 +30,156 @@
 #include <memory>
 #include <numeric>
 #include <type_traits>
+#include <string_view>
 
 namespace detail
 {
-    // Provides means for building size-delimited strings in-place.
+    // Provides means for building size-delimited strings in-place (without heap allocations).
     // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
     // In debug mode appending ensures that the built string does not exceed the available space.
     // In release mode no such checks are made thus dangerous memory corruption may occur if used incorrectly.
     //
-    template<typename Char,
-        int InPlaceSize,
-        bool Forward>
+    template<typename CharT,
+        size_t MaxSize,
+        bool Forward,
+        typename Traits>
     class basic_inplace_stringbuilder
     {
-        int consumed = 0;
-        std::array<Char, InPlaceSize> data; // Last character is reserved for '\0'.
+        static_assert(MaxSize > 0, "MaxSize must be greater than zero");
 
     public:
-        basic_inplace_stringbuilder& append(Char ch)
+        using traits_type = Traits;
+        using char_type = CharT;
+        using value_type = char_type;
+        using size_type = size_t;
+        using difference_type = std::ptrdiff_t;
+        using reference = char_type&;
+        using const_reference = const char_type&;
+        using pointer = char_type*;
+        using const_pointer = const char_type*;
+
+        size_type size() const noexcept { return consumed; }
+        size_type length() const noexcept { return size(); }
+
+        basic_inplace_stringbuilder& append(char_type ch) noexcept
         {
             assert(ch != '\0');
-            assert(consumed + 1 < InPlaceSize);
+            assert(consumed < MaxSize);
             if (Forward) {
-                data[consumed++] = ch;
+                data_[consumed++] = ch;
             } else {
-                data[InPlaceSize - 1 - (++consumed)] = ch;
+                data_[MaxSize - (++consumed)] = ch;
             }
             return *this;
         }
 
-        template<int StrSizeWith0>
-        basic_inplace_stringbuilder& append(const Char(&str)[StrSizeWith0])
+        template<size_type StrSizeWith0>
+        basic_inplace_stringbuilder& append(const char_type(&str)[StrSizeWith0]) noexcept
         {
+            constexpr size_t strSize = StrSizeWith0 - 1;
             assert(consumed + StrSizeWith0 <= InPlaceSize);
             if (Forward) {
-                std::copy_n(&str[0], StrSizeWith0 - 1, std::begin(data) + consumed);
+                Traits::copy(data_.data() + consumed, &str[0], strSize);
             } else {
-                std::copy_n(&str[0], StrSizeWith0 - 1, std::begin(data) + InPlaceSize - StrSizeWith0 - consumed);
+                Traits::copy(data_.data() + MaxSize + strSize - consumed, &str[0], strSize);
             }
-            consumed += StrSizeWith0 - 1;
+            consumed += strSize;
             return *this;
+        }
+
+        basic_inplace_stringbuilder& append(const char_type* str, size_type size) noexcept
+        {
+            assert(consumed + size <= MaxSize);
+            if (Forward) {
+                Traits::copy(data_.data() + consumed, str, size);
+            } else {
+                Traits::copy(data_.data() + MaxSize - size - consumed, str, size);
+            }
+            consumed += size;
+            return *this;
+        }
+
+        basic_inplace_stringbuilder& append(const char_type* str) noexcept
+        {
+            return append(str, Traits::length(str));
+        }
+
+        template<typename OtherTraits, typename OtherAlloc>
+        basic_inplace_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
+        {
+            return append(str.data(), str.size());
+        }
+
+        template<typename OtherTraits>
+        basic_inplace_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
+        {
+            return append(sv.data(), sv.size());
+        }
+
+        template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
+        basic_inplace_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
+        {
+            return append(ss.str_view());
+        }
+
+        template<typename Any>
+        basic_inplace_stringbuilder& append(const Any& a) noexcept
+        {
+            return append(std::to_string(a));
+        }
+
+        template<typename IntegerT, typename = std::enable_if<Forward>>
+        void encodeBackwards(IntegerT iv)
+        {
+            if (iv >= 0)
+            {
+                do {
+                    auto divres = std::div(iv, IntegerT{10});
+                    append(static_cast<char_type>('0' + divres.rem));
+                    iv = divres.quot;
+                } while (iv > 0);
+            }
+            else
+            {
+                do {
+                    auto divres = std::div(iv, IntegerT{10});
+                    append(static_cast<char_type>('0' - divres.rem));
+                    iv = divres.quot;
+                } while (iv < 0);
+                append('-');
+            }
+        }
+
+        char_type* data() noexcept
+        {
+            return data_.data() + (Forward ? 0 : MaxSize - consumed);
+        }
+
+        const char_type* data() const noexcept
+        {
+            return data_.data() + (Forward ? 0 : MaxSize - consumed);
+        }
+
+        const char_type* c_str() const noexcept
+        {
+            assureNullTermination();
+            return data();
         }
 
         auto str() const
         {
-            assert(consumed < InPlaceSize);
-            const auto b = data.cbegin();
+            assert(consumed <= MaxSize);
+            const auto b = data_.cbegin();
             if (Forward) {
-                return std::basic_string<Char>(b, b + consumed);
+                return std::basic_string<char_type>(b, b + consumed);
             } else {
-                return std::basic_string<Char>(b + InPlaceSize - 1 - consumed, b + InPlaceSize - 1);
+                return std::basic_string<char_type>(b + MaxSize - consumed, b + MaxSize);
             }
+        }
+
+        std::basic_string_view<char_type, traits_type> str_view() const noexcept
+        {
+            return { data(), size() };
         }
 
         template<typename Any>
@@ -88,6 +187,16 @@ namespace detail
         {
             return append(std::forward<Any>(a));
         }
+
+    private:
+        void assureNullTermination() const noexcept
+        {
+            assert(consumed <= MaxSize);
+            const_cast<char_type&>(data_[Forward ? consumed : MaxSize]) = '\0';
+        }
+
+        size_type consumed = 0;
+        std::array<char_type, MaxSize + 1> data_; // Last character is reserved for '\0'.
     };
 
     // The following code is based on ebo_helper explained in this talk:
@@ -294,8 +403,8 @@ namespace detail
 
 namespace std
 {
-    template<typename Char, int InPlaceSize, bool Forward>
-    inline auto to_string(const detail::basic_inplace_stringbuilder<Char, InPlaceSize, Forward>& sb)
+    template<typename Char, int InPlaceSize, bool Forward, typename Traits>
+    inline auto to_string(const detail::basic_inplace_stringbuilder<Char, InPlaceSize, Forward, Traits>& sb)
     {
         return sb.str();
     }
@@ -307,11 +416,18 @@ namespace std
     }
 }
 
-template<int InPlaceSize, bool Forward = true>
-using inplace_stringbuilder = detail::basic_inplace_stringbuilder<char, InPlaceSize, Forward>;
+template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<char>>
+using inplace_stringbuilder = detail::basic_inplace_stringbuilder<char, MaxSize, Forward, Traits>;
 
-template<int InPlaceSize, bool Forward = true>
-using inplace_wstringbuilder = detail::basic_inplace_stringbuilder<wchar_t, InPlaceSize, Forward>;
+template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<wchar_t>>
+using inplace_wstringbuilder = detail::basic_inplace_stringbuilder<wchar_t, MaxSize, Forward, Traits>;
+
+template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<char16_t>>
+using inplace_u16stringbuilder = detail::basic_inplace_stringbuilder<char16_t, MaxSize, Forward, Traits>;
+
+template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<char32_t>>
+using inplace_u32stringbuilder = detail::basic_inplace_stringbuilder<char32_t, MaxSize, Forward, Traits>;
+
 
 template<int InPlaceSize, typename Alloc = std::allocator<char>>
 using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Alloc>;
@@ -350,15 +466,15 @@ namespace detail
     }
 
     template<typename T>
-    constexpr int estimateTypeSeqSize(type<T> t)
+    constexpr int estimateTypeSeqSize(type<T> v)
     {
-        return estimateTypeSize(t);
+        return estimateTypeSize(v);
     }
 
     template<typename T1, typename... TX>
-    constexpr int estimateTypeSeqSize(type<T1> t1, type<TX>... tx)
+    constexpr int estimateTypeSeqSize(type<T1> v1, type<TX>... vx)
     {
-        return estimateTypeSize(t1) + estimateTypeSeqSize(tx...);
+        return estimateTypeSize(v1) + estimateTypeSeqSize(vx...);
     }
 
     template<size_t S1, size_t S2, std::size_t... I1, std::size_t... I2>
@@ -410,9 +526,7 @@ namespace detail
     */
 
     constexpr std::array<char, 1> stringify(char c)
-    {
-        return { c };
-    }
+    { return { c }; }
 
     template<typename T, typename = std::void_t<>>
     struct CanStringify : std::false_type {};
@@ -422,15 +536,11 @@ namespace detail
 
     template<typename T>
     constexpr bool canStringify(type<T>)
-    {
-        return CanStringify<T>::value;
-    }
+    { return CanStringify<T>::value; }
 
     template<typename T1, typename... TX>
     constexpr bool canStringify(type<T1>, type<TX>... tx)
-    {
-        return CanStringify<T1>::value && canStringify(tx...);
-    }
+    { return CanStringify<T1>::value && canStringify(tx...); }
 
     template<typename SS, typename T>
     SS& append(SS& ss, T&& t)
@@ -467,7 +577,7 @@ namespace detail
         constexpr auto operator()(TX&&... vx) const
         {
             //return toCharArray(concatenateArrays(stringify(vx)..., stringify('\0')));
-            return concatenateArrays(stringify(vx)...);
+            return concatenateArrays(stringify(vx)..., stringify('\0'));
         }
     };
 }
