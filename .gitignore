@@ -31,6 +31,9 @@
 # Visual Studio
 .vs
 x64/Debug
+x64/MinSizeRel
+x64/Release
+x64/RelWithDebInfo
 
 # CMake
 CMakeSettings.json

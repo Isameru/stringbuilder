@@ -34,6 +34,66 @@
 
 namespace detail
 {
+    template<typename SB, typename T, typename Enable = void>
+    struct Appender
+    {
+        void operator()(SB& sb, T&& v)
+        {
+            // Unless there are suitable converters, make use of std::to_string() to stringify the object.
+            sb.append_string(std::to_string(std::forward<T>(v)));
+        }
+    };
+
+    template<typename SB, typename CharT, int N>
+    struct Appender<SB, const CharT(&)[N]/*, std::enable_if<
+        std::is_same_v<CharT, typename SB::char_type> >*/>
+    {
+        void operator()(SB& sb, const typename SB::char_type(&str)[N])
+        {
+            sb.append_string<N>(str);
+        }
+    };
+
+    template<typename SB, typename IntegerT>
+    struct Appender<SB, IntegerT, std::enable_if_t<
+        std::is_integral_v<IntegerT> && !std::is_same_v<IntegerT, typename SB::char_type> >>
+    {
+        void operator()(SB& sb, IntegerT iv)
+        {
+            basic_inplace_stringbuilder<SB::char_type, 20, false, SB::traits_type> bss;
+
+            if (iv >= 0) {
+                do {
+                    auto divres = std::div(iv, IntegerT{10});
+                    bss.append_char(static_cast<typename SB::char_type>('0' + divres.rem));
+                    iv = divres.quot;
+                } while (iv > 0);
+            } else {
+                do {
+                    auto divres = std::div(iv, IntegerT{10});
+                    bss.append_char(static_cast<typename SB::char_type>('0' - divres.rem));
+                    iv = divres.quot;
+                } while (iv < 0);
+                bss.append_char('-');
+            }
+
+            sb.append_string(bss);
+        }
+    };
+
+    template<typename SB>
+    struct Appender<SB, typename SB::char_type/*, std::enable_if<
+        std::is_same_v<typename SB::char_type, char> ||
+        std::is_same_v<typename SB::char_type, wchar_t> ||
+        std::is_same_v<typename SB::char_type, char16_t> ||
+        std::is_same_v<typename SB::char_type, char32_t> >*/>
+    {
+        void operator()(SB& sb, typename SB::char_type ch)
+        {
+            sb.append_char(ch);
+        }
+    };
+
     // Provides means for building size-delimited strings in-place (without heap allocations).
     // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
     // In debug mode appending ensures that the built string does not exceed the available space.
@@ -61,7 +121,7 @@ namespace detail
         size_type size() const noexcept { return consumed; }
         size_type length() const noexcept { return size(); }
 
-        basic_inplace_stringbuilder& append(char_type ch) noexcept
+        basic_inplace_stringbuilder& append_char(char_type ch) noexcept
         {
             assert(ch != '\0');
             assert(consumed < MaxSize);
@@ -74,20 +134,20 @@ namespace detail
         }
 
         template<size_type StrSizeWith0>
-        basic_inplace_stringbuilder& append(const char_type(&str)[StrSizeWith0]) noexcept
+        basic_inplace_stringbuilder& append_string(const char_type(&str)[StrSizeWith0]) noexcept
         {
             constexpr size_t strSize = StrSizeWith0 - 1;
-            assert(consumed + StrSizeWith0 <= InPlaceSize);
+            assert(consumed + StrSizeWith0 <= MaxSize + 1);
             if (Forward) {
                 Traits::copy(data_.data() + consumed, &str[0], strSize);
             } else {
-                Traits::copy(data_.data() + MaxSize + strSize - consumed, &str[0], strSize);
+                Traits::copy(data_.data() + MaxSize - strSize - consumed, &str[0], strSize);
             }
             consumed += strSize;
             return *this;
         }
 
-        basic_inplace_stringbuilder& append(const char_type* str, size_type size) noexcept
+        basic_inplace_stringbuilder& append_string(const char_type* str, size_type size) noexcept
         {
             assert(consumed + size <= MaxSize);
             if (Forward) {
@@ -99,52 +159,46 @@ namespace detail
             return *this;
         }
 
-        basic_inplace_stringbuilder& append(const char_type* str) noexcept
+        basic_inplace_stringbuilder& append_string(const char_type* str) noexcept
         {
-            return append(str, Traits::length(str));
+            return append_string(str, Traits::length(str));
         }
 
         template<typename OtherTraits, typename OtherAlloc>
-        basic_inplace_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
+        basic_inplace_stringbuilder& append_string(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
         {
-            return append(str.data(), str.size());
+            return append_string(str.data(), str.size());
         }
 
         template<typename OtherTraits>
-        basic_inplace_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
+        basic_inplace_stringbuilder& append_string(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
         {
-            return append(sv.data(), sv.size());
+            return append_string(sv.data(), sv.size());
         }
 
         template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
-        basic_inplace_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
+        basic_inplace_stringbuilder& append_string(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
         {
-            return append(ss.str_view());
+            return append_string(ss.str_view());
         }
 
         template<typename AnyT>
-        basic_inplace_stringbuilder& append(const AnyT& any) noexcept
+        basic_inplace_stringbuilder& append(AnyT&& any)
         {
-            return append(std::to_string(any));
+            Appender<basic_inplace_stringbuilder, AnyT>{}(*this, std::forward<AnyT>(any));
+            return *this;
         }
 
-        template<typename IntegerT, typename = std::enable_if<Forward>>
-        void encodeBackwards(IntegerT iv)
+        template<typename AnyT>
+        basic_inplace_stringbuilder& operator<<(AnyT&& any)
         {
-            if (iv >= 0) {
-                do {
-                    auto divres = std::div(iv, IntegerT{10});
-                    append(static_cast<char_type>('0' + divres.rem));
-                    iv = divres.quot;
-                } while (iv > 0);
-            } else {
-                do {
-                    auto divres = std::div(iv, IntegerT{10});
-                    append(static_cast<char_type>('0' - divres.rem));
-                    iv = divres.quot;
-                } while (iv < 0);
-                append('-');
-            }
+            return append(std::forward<AnyT>(any));
+        }
+
+        template<typename AnyT1, typename... AnyTX>
+        basic_inplace_stringbuilder& append(AnyT1&& any1, AnyTX&&... anyX)
+        {
+            return append(std::forward<AnyT1>(any1)).append(std::forward<AnyTX>(anyX)...);
         }
 
         char_type* data() noexcept
@@ -177,12 +231,6 @@ namespace detail
         std::basic_string_view<char_type, traits_type> str_view() const noexcept
         {
             return { data(), size() };
-        }
-
-        template<typename Any>
-        basic_inplace_stringbuilder& operator<<(Any&& a)
-        {
-            return append(std::forward<Any>(a));
         }
 
     private:
@@ -227,7 +275,7 @@ namespace detail
 
     // Provides means for efficient construction of strings.
     // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings.
-    // If the available space gets exhausted, new chunks of memory are allocated on heap.
+    // If the available space gets exhausted, new chunks of memory are allocated on the heap.
     //
     template<typename Char,
         size_t InPlaceSize,
@@ -411,14 +459,14 @@ namespace detail
 
 namespace std
 {
-    template<typename Char, int InPlaceSize, bool Forward, typename Traits>
-    inline auto to_string(const detail::basic_inplace_stringbuilder<Char, InPlaceSize, Forward, Traits>& sb)
+    template<typename CharT, int InPlaceSize, bool Forward, typename Traits>
+    inline auto to_string(const detail::basic_inplace_stringbuilder<CharT, InPlaceSize, Forward, Traits>& sb)
     {
         return sb.str();
     }
 
-    template<typename Char, int InPlaceSize, typename Traits, typename Alloc>
-    inline auto to_string(const detail::basic_stringbuilder<Char, InPlaceSize, Traits, Alloc>& sb)
+    template<typename CharT, int InPlaceSize, typename Traits, typename Alloc>
+    inline auto to_string(const detail::basic_stringbuilder<CharT, InPlaceSize, Traits, Alloc>& sb)
     {
         return sb.str();
     }

@@ -27,7 +27,7 @@
 TEST(stringbuilder, InPlaceStringBuilder_Riddle)
 {
     auto sb = inplace_stringbuilder<34>{};
-    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     EXPECT_EQ(sb.size(), 34);
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
     ASSERT_STREQ(sb.c_str(), "There are 8 bits in a single byte.");
@@ -46,6 +46,9 @@ TEST(stringbuilder, InPlaceStringBuilder_EncodeInteger)
     {   auto sb = inplace_stringbuilder<1, false>{};
         sb << 0;
         EXPECT_EQ(std::to_string(sb), "0");
+        auto sb2 = inplace_stringbuilder<1>{};
+        sb2 << sb;
+        EXPECT_EQ(std::to_string(sb2), "0");
     }
     {   auto sb = inplace_stringbuilder<19, false>{};
         sb << std::numeric_limits<int64_t>::max();
