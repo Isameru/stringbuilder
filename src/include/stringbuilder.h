@@ -34,23 +34,23 @@
 
 namespace detail
 {
+    // Appender is an utility class for encoding various kinds of objects (chars, strings, integers) and their propagation to stringbuilder or inplace_stringbuilder.
+    //
+
+    // Unless there are suitable converters, make use of std::to_string() to stringify the object.
     template<typename SB, typename T, typename Enable = void>
-    struct Appender
-    {
-        void operator()(SB& sb, T&& v)
-        {
-            // Unless there are suitable converters, make use of std::to_string() to stringify the object.
-            sb.append_string(std::to_string(std::forward<T>(v)));
+    struct Appender {
+        void operator()(SB& sb, const T& v) const {
+            sb.append(std::to_string(v));
         }
     };
 
-    template<typename SB, typename CharT, int N>
-    struct Appender<SB, const CharT(&)[N]/*, std::enable_if<
-        std::is_same_v<CharT, typename SB::char_type> >*/>
+    template<typename SB>
+    struct Appender<SB, const typename SB::char_type*>
     {
-        void operator()(SB& sb, const typename SB::char_type(&str)[N])
+        void operator()(SB& sb, const typename SB::char_type* str) const
         {
-            sb.append_string<N>(str);
+            sb.append_c_str(str);
         }
     };
 
@@ -58,39 +58,34 @@ namespace detail
     struct Appender<SB, IntegerT, std::enable_if_t<
         std::is_integral_v<IntegerT> && !std::is_same_v<IntegerT, typename SB::char_type> >>
     {
-        void operator()(SB& sb, IntegerT iv)
+        void operator()(SB& sb, IntegerT iv) const
         {
-            basic_inplace_stringbuilder<SB::char_type, 20, false, SB::traits_type> bss;
-
+            // In this particular case, std::div() is x2 slower instead of / and %.
             if (iv >= 0) {
-                do {
-                    auto divres = std::div(iv, IntegerT{10});
-                    bss.append_char(static_cast<typename SB::char_type>('0' + divres.rem));
-                    iv = divres.quot;
-                } while (iv > 0);
+                if (iv >= 10) {
+                    basic_inplace_stringbuilder<SB::char_type, 20, false, SB::traits_type> bss;
+                    do {
+                        bss.append(static_cast<typename SB::char_type>('0' + iv % 10));
+                        iv /= 10;
+                    } while (iv > 0);
+                    sb.append(bss);
+                } else {
+                    sb.append(static_cast<typename SB::char_type>('0' + static_cast<char>(iv)));
+                }
             } else {
-                do {
-                    auto divres = std::div(iv, IntegerT{10});
-                    bss.append_char(static_cast<typename SB::char_type>('0' - divres.rem));
-                    iv = divres.quot;
-                } while (iv < 0);
-                bss.append_char('-');
+                if (iv <= -10) {
+                    basic_inplace_stringbuilder<SB::char_type, 20, false, SB::traits_type> bss;
+                    do {
+                        bss.append(static_cast<typename SB::char_type>('0' - iv % 10));
+                        iv /= 10;
+                    } while (iv < 0);
+                    bss.append('-');
+                    sb.append(bss);
+                } else {
+                    sb.append('-');
+                    sb.append(static_cast<typename SB::char_type>('0' - static_cast<char>(iv)));
+                }
             }
-
-            sb.append_string(bss);
-        }
-    };
-
-    template<typename SB>
-    struct Appender<SB, typename SB::char_type/*, std::enable_if<
-        std::is_same_v<typename SB::char_type, char> ||
-        std::is_same_v<typename SB::char_type, wchar_t> ||
-        std::is_same_v<typename SB::char_type, char16_t> ||
-        std::is_same_v<typename SB::char_type, char32_t> >*/>
-    {
-        void operator()(SB& sb, typename SB::char_type ch)
-        {
-            sb.append_char(ch);
         }
     };
 
@@ -121,11 +116,11 @@ namespace detail
         size_type size() const noexcept { return consumed; }
         size_type length() const noexcept { return size(); }
 
-        basic_inplace_stringbuilder& append_char(char_type ch) noexcept
+        basic_inplace_stringbuilder& append(char_type ch) noexcept
         {
             assert(ch != '\0');
             assert(consumed < MaxSize);
-            if (Forward) {
+            if /*constexpr*/ (Forward) {
                 data_[consumed++] = ch;
             } else {
                 data_[MaxSize - (++consumed)] = ch;
@@ -134,7 +129,7 @@ namespace detail
         }
 
         template<size_type StrSizeWith0>
-        basic_inplace_stringbuilder& append_string(const char_type(&str)[StrSizeWith0]) noexcept
+        basic_inplace_stringbuilder& append(const char_type(&str)[StrSizeWith0]) noexcept
         {
             constexpr size_t strSize = StrSizeWith0 - 1;
             assert(consumed + StrSizeWith0 <= MaxSize + 1);
@@ -147,7 +142,13 @@ namespace detail
             return *this;
         }
 
-        basic_inplace_stringbuilder& append_string(const char_type* str, size_type size) noexcept
+        template<size_type N>
+        basic_inplace_stringbuilder& append(const std::array<char_type, N>& arr) noexcept
+        {
+            return append(arr.data(), N);
+        }
+
+        basic_inplace_stringbuilder& append(const char_type* str, size_type size) noexcept
         {
             assert(consumed + size <= MaxSize);
             if (Forward) {
@@ -159,33 +160,40 @@ namespace detail
             return *this;
         }
 
-        basic_inplace_stringbuilder& append_string(const char_type* str) noexcept
+        basic_inplace_stringbuilder& append_c_str(const char_type* str, size_type size) noexcept
         {
-            return append_string(str, Traits::length(str));
+            return append(str, size);
+        }
+
+        basic_inplace_stringbuilder& append_c_str(const char_type* str) noexcept
+        {
+            return append(str, Traits::length(str));
         }
 
         template<typename OtherTraits, typename OtherAlloc>
-        basic_inplace_stringbuilder& append_string(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
+        basic_inplace_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
         {
-            return append_string(str.data(), str.size());
+            return append(str.data(), str.size());
         }
 
         template<typename OtherTraits>
-        basic_inplace_stringbuilder& append_string(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
+        basic_inplace_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
         {
-            return append_string(sv.data(), sv.size());
+            return append(sv.data(), sv.size());
         }
 
         template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
-        basic_inplace_stringbuilder& append_string(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
+        basic_inplace_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
         {
-            return append_string(ss.str_view());
+            return append(ss.str_view());
         }
 
-        template<typename AnyT>
-        basic_inplace_stringbuilder& append(AnyT&& any)
+        // Defining append(AnyT&& any) generates a plethora of class specialization issues.
+
+        template<typename T>
+        basic_inplace_stringbuilder& append(const T& v)
         {
-            Appender<basic_inplace_stringbuilder, AnyT>{}(*this, std::forward<AnyT>(any));
+            Appender<basic_inplace_stringbuilder, T>{}(*this, v);
             return *this;
         }
 
@@ -195,10 +203,16 @@ namespace detail
             return append(std::forward<AnyT>(any));
         }
 
-        template<typename AnyT1, typename... AnyTX>
-        basic_inplace_stringbuilder& append(AnyT1&& any1, AnyTX&&... anyX)
+        template<typename AnyT>
+        basic_inplace_stringbuilder& append_many(AnyT&& any)
         {
-            return append(std::forward<AnyT1>(any1)).append(std::forward<AnyTX>(anyX)...);
+            return append(std::forward<AnyT1>(any));
+        }
+
+        template<typename AnyT1, typename... AnyTX>
+        basic_inplace_stringbuilder& append_many(AnyT1&& any1, AnyTX&&... anyX)
+        {
+            return append(std::forward<AnyT1>(any1)).append_many(std::forward<AnyTX>(anyX)...);
         }
 
         char_type* data() noexcept
@@ -213,28 +227,29 @@ namespace detail
 
         const char_type* c_str() const noexcept
         {
-            assureNullTermination();
+            // Placing '\0' at the end of string is a kind of lazy evaluation and is acceptable also for const objects.
+            const_cast<basic_inplace_stringbuilder*>(this)->placeNullTerminator();
             return data();
         }
 
-        auto str() const
+        std::basic_string<char_type> str() const
         {
             assert(consumed <= MaxSize);
             const auto b = data_.cbegin();
-            if (Forward) {
-                return std::basic_string<char_type>(b, b + consumed);
+            if /*constexpr*/ (Forward) {
+                return {b, b + consumed};
             } else {
-                return std::basic_string<char_type>(b + MaxSize - consumed, b + MaxSize);
+                return {b + MaxSize - consumed, b + MaxSize};
             }
         }
 
         std::basic_string_view<char_type, traits_type> str_view() const noexcept
         {
-            return { data(), size() };
+            return {data(), size()};
         }
 
     private:
-        void assureNullTermination() const noexcept
+        void placeNullTerminator() noexcept
         {
             assert(consumed <= MaxSize);
             const_cast<char_type&>(data_[Forward ? consumed : MaxSize]) = '\0';
@@ -288,6 +303,7 @@ namespace detail
         using AllocTraits = std::allocator_traits<Alloc>;
 
     public:
+        using traits_type = Traits;
         using char_type = Char;
         using value_type = char_type;
         using allocator_type = AllocOrig;
@@ -337,11 +353,11 @@ namespace detail
 
         basic_stringbuilder(const basic_stringbuilder&) = delete;
 
-        basic_stringbuilder(basic_stringbuilder&& sb) noexcept :
-            headChunkInPlace{sb.headChunkInPlace},
-            tailChunk{sb.tailChunk}
+        basic_stringbuilder(basic_stringbuilder&& other) noexcept :
+            headChunkInPlace{other.headChunkInPlace},
+            tailChunk{other.tailChunk}
         {
-            sb.headChunkInPlace.next = nullptr;
+            other.headChunkInPlace.next = nullptr;
         }
 
         ~basic_stringbuilder()
@@ -368,7 +384,7 @@ namespace detail
 
         size_type length() const noexcept { return size(); }
 
-        basic_stringbuilder& append(Char ch)
+        basic_stringbuilder& append(char_type ch)
         {
             assert(ch != '\0');
             claimOne() = ch;
@@ -376,7 +392,7 @@ namespace detail
         }
 
         template<size_type StrSizeWith0>
-        basic_stringbuilder& append(const Char(&str)[StrSizeWith0])
+        basic_stringbuilder& append(const char_type(&str)[StrSizeWith0])
         {
             constexpr size_type StrSize = StrSizeWith0 - 1;
             assert(str[StrSize] == '\0');
@@ -389,10 +405,81 @@ namespace detail
             return *this;
         }
 
+        template<size_type N>
+        basic_stringbuilder& append(const std::array<char_type, N>& arr) noexcept
+        {
+            return append(arr.data(), N);
+        }
+
+        basic_stringbuilder& append(const char_type* str, size_type size) noexcept
+        {
+            for (auto left = size; left > 0;)
+            {
+                const auto claimed = claim(left, 1);
+                Traits::copy(claimed.first, &str[size - left], claimed.second);
+                left -= claimed.second;
+            }
+            return *this;
+        }
+
+        basic_stringbuilder& append_c_str(const char_type* str, size_type size) noexcept
+        {
+            return append(str, size);
+        }
+
+        basic_stringbuilder& append_c_str(const char_type* str) noexcept
+        {
+            return append(str, Traits::length(str));
+        }
+
+        template<typename OtherTraits, typename OtherAlloc>
+        basic_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
+        {
+            return append(str.data(), str.size());
+        }
+
+        template<typename OtherTraits>
+        basic_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
+        {
+            return append(sv.data(), sv.size());
+        }
+
+        template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
+        basic_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
+        {
+            return append(ss.str_view());
+        }
+
+        // Defining append(AnyT&& any) generates a plethora of class specialization issues.
+
+        template<typename T>
+        basic_stringbuilder& append(const T& v)
+        {
+            Appender<basic_stringbuilder, T>{}(*this, v);
+            return *this;
+        }
+
+        template<typename AnyT>
+        basic_stringbuilder& operator<<(AnyT&& any)
+        {
+            return append(std::forward<AnyT>(any));
+        }
+
+        template<typename AnyT>
+        basic_stringbuilder& append_many(AnyT&& any)
+        {
+            return append(std::forward<AnyT>(any));
+        }
+
+        template<typename AnyT1, typename... AnyTX>
+        basic_stringbuilder& append_many(AnyT1&& any1, AnyTX&&... anyX)
+        {
+            return append(std::forward<AnyT1>(any1)).append_many(std::forward<AnyTX>(anyX)...);
+        }
+
         auto str() const
         {
-            const auto size0 = size();
-            auto str = std::basic_string<Char>(static_cast<const size_type>(size0), '\0');
+            auto str = std::basic_string<char_type>(static_cast<size_t>(size()), '\0');
             size_type consumed = 0;
             for (const Chunk* chunk = headChunk(); chunk != nullptr; chunk = chunk->next)
             {
@@ -401,8 +488,6 @@ namespace detail
             }
             return str;
         }
-
-        template<typename AnyT> basic_stringbuilder& operator<<(AnyT&& any) { return append(std::forward<AnyT>(any)); }
 
     private:
         Chunk* allocChunk(size_type reserve)
@@ -610,30 +695,26 @@ namespace detail
     constexpr bool canStringify(type<T1>, type<TX>... tx)
     { return CanStringify<T1>::value && canStringify(tx...); }
 
-    template<typename SS, typename T>
-    SS& append(SS& ss, T&& t)
-    {
-        ss << t;
-        return ss;
-    }
-
-    template<typename SS, typename T1, typename... TX>
-    SS& append(SS& ss, T1&& t1, TX&&... tx)
-    {
-        append(ss, t1);
-        append(ss, tx...);
-        return ss;
-    }
-
     template<bool Stringify>
     struct StringMaker
     {
+        template<typename SB, typename T1, typename... TX>
+        constexpr void append(SB& sb, T1&& v1, TX&&... vx) const
+        {
+            sb.append(std::forward<T1>(v1));
+            append(sb, std::forward<TX>(vx)...);
+        }
+
+        template<typename SB, typename T>
+        constexpr void append(SB& sb, T&& v) const
+        {   sb.append(std::forward<T>(v)); }
+        
         template<typename... TX>
         constexpr auto operator()(TX&&... vx) const
         {
             constexpr int estimatedSize = estimateTypeSeqSize(type<TX>{}...);
             stringbuilder<estimatedSize> ss;
-            append(ss, vx...);
+            ss.append_many(vx...);
             return ss.str();
         }
     };

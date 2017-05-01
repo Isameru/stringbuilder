@@ -21,10 +21,10 @@
 // SOFTWARE.
 
 #include <stringbuilder.h>
-#include <string_view>
 #include <gtest/gtest.h>
+#include <chrono>
 
-TEST(stringbuilder, InPlaceStringBuilder_Riddle)
+TEST(InPlaceStringBuilder, Riddle)
 {
     auto sb = inplace_stringbuilder<34>{};
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
@@ -33,40 +33,35 @@ TEST(stringbuilder, InPlaceStringBuilder_Riddle)
     ASSERT_STREQ(sb.c_str(), "There are 8 bits in a single byte.");
 }
 
-TEST(stringbuilder, InPlaceStringBuilder_Riddle_Reversed)
+TEST(InPlaceStringBuilder, RiddleReversed)
 {
     auto sb = inplace_stringbuilder<34, false>{};
-    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), ".single byte bits in a 8are  There");
     ASSERT_STREQ(sb.c_str(), ".single byte bits in a 8are  There");
 }
 
-TEST(stringbuilder, InPlaceStringBuilder_EncodeInteger)
+TEST(InPlaceStringBuilder, EncodeInteger)
 {
-    {   auto sb = inplace_stringbuilder<1, false>{};
+    {   auto sb = inplace_stringbuilder<1>{};
         sb << 0;
         EXPECT_EQ(std::to_string(sb), "0");
-        auto sb2 = inplace_stringbuilder<1>{};
-        sb2 << sb;
-        EXPECT_EQ(std::to_string(sb2), "0");
     }
-    {   auto sb = inplace_stringbuilder<19, false>{};
+    {   auto sb = inplace_stringbuilder<19>{};
         sb << std::numeric_limits<int64_t>::max();
         EXPECT_EQ(std::to_string(sb), "9223372036854775807");
-        auto sb2 = inplace_stringbuilder<19>{};
-        sb2 << sb;
-        EXPECT_EQ(std::to_string(sb2), "9223372036854775807");
     }
-    {   auto sb = inplace_stringbuilder<20, false>{};
+    {   auto sb = inplace_stringbuilder<20>{};
         sb << std::numeric_limits<int64_t>::min();
         EXPECT_EQ(std::to_string(sb), "-9223372036854775808");
-        auto sb2 = inplace_stringbuilder<20>{};
-        sb2 << sb;
-        EXPECT_EQ(std::to_string(sb2), "-9223372036854775808");
+    }
+    {   auto sb = inplace_stringbuilder<20>{};
+        sb << std::numeric_limits<uint64_t>::max();
+        EXPECT_EQ(std::to_string(sb), "18446744073709551615");
     }
 }
 
-TEST(stringbuilder, InPlaceStringBuilder_EncodeOther)
+TEST(InPlaceStringBuilder, EncodeOther)
 {
     {   auto sb = inplace_stringbuilder<11, false>{};
         sb << -123.4567;
@@ -75,43 +70,131 @@ TEST(stringbuilder, InPlaceStringBuilder_EncodeOther)
 }
 
 
-TEST(stringbuilder, Riddle_InPlace0)
+TEST(StringBuilder, Riddle_InPlace0)
 {
     auto sb = stringbuilder<0>{};
-    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
-TEST(stringbuilder, Riddle_InPlace1)
+TEST(StringBuilder, Riddle_InPlace1)
 {
     auto sb = stringbuilder<1>{};
-    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
-TEST(stringbuilder, Riddle_InPlace10)
+TEST(StringBuilder, Riddle_InPlace10)
 {
     auto sb = stringbuilder<10>{};
-    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
-TEST(stringbuilder, Riddle_InPlace100)
+TEST(StringBuilder, Riddle_InPlace100)
 {
     stringbuilder<100> sb;
-    sb << "There" << ' ' << "are " << '8' << " bits in a " << "single byte" << '.';
+    sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
-TEST(stringbuilder, MakeString_Simple)
+TEST(MakeString, Simple)
 {
     EXPECT_EQ(make_string('a', "bcd", 'x'), "abcdx");
     EXPECT_EQ(make_string("There", ' ', "are ", '8', " bits in a ", "single byte", '.'), "There are 8 bits in a single byte.");
 }
 
-TEST(stringbuilder, MakeStringConstexpr_Simple)
+TEST(MakeString, Constexpr_Simple)
 {
     constexpr auto a = make_string('a', 'b', 'c');
     constexpr auto e = std::array<char, 4>{ 'a', 'b', 'c', '\0' };
     EXPECT_EQ(a, e);
+}
+
+TEST(Perf, IntegerSequence)
+{
+    constexpr int iterCount = 3000;
+    const int span = 1000;
+    constexpr size_t SufficientMaxSize = 8832;
+
+    using Clock = std::chrono::high_resolution_clock;
+
+    {
+        const auto time0 = Clock::now();
+        for (int iter = 0; iter < iterCount; ++iter)
+        {
+            std::string s;
+            for (int i = -span; i <= span; ++i) {
+                s += std::to_string(i);
+                s += ' ';
+            }
+            volatile auto ssize = s.size();
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
+        std::cerr << "[  PERFORM ] std::string concatenation: " << elapsed.count() << " ms" << std::endl;
+    }
+
+    {
+        const auto time0 = Clock::now();
+        for (int iter = 0; iter < iterCount; ++iter)
+        {
+            std::stringstream ss;
+            for (int i = -span; i <= span; ++i) {
+                ss << i;
+                ss << ' ';
+            }
+            std::string s = ss.str();
+            volatile auto ssize = s.size();
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
+        std::cerr << "[  PERFORM ] std::stringstream: " << elapsed.count() << " ms" << std::endl;
+    }
+
+    {
+        const auto time0 = Clock::now();
+        for (int iter = 0; iter < iterCount; ++iter)
+        {
+            inplace_stringbuilder<SufficientMaxSize> sb;
+            for (int i = -span; i <= span; ++i) {
+                sb << i;
+                sb << ' ';
+            }
+            std::string s = sb.str();
+            volatile auto ssize = s.size();
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
+        std::cerr << "[  PERFORM ] inplace_stringbuilder<~>: " << elapsed.count() << " ms" << std::endl;
+    }
+
+    {
+        const auto time0 = Clock::now();
+        for (int iter = 0; iter < iterCount; ++iter)
+        {
+            stringbuilder<0> sb;
+            for (int i = -span; i < span; ++i) {
+                sb << i;
+                sb << ' ';
+            }
+            std::string s = sb.str();
+            volatile auto ssize = s.size();
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
+        std::cerr << "[  PERFORM ] stringbuilder<0>: " << elapsed.count() << " ms" << std::endl;
+    }
+
+    {
+        const auto time0 = Clock::now();
+        for (int iter = 0; iter < iterCount; ++iter)
+        {
+            stringbuilder<SufficientMaxSize> sb;
+            for (int i = -span; i < span; ++i) {
+                sb << i;
+                sb << ' ';
+            }
+            std::string s = sb.str();
+            volatile auto ssize = s.size();
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
+        std::cerr << "[  PERFORM ] stringbuilder<~>: " << elapsed.count() << " ms" << std::endl;
+    }
 }
