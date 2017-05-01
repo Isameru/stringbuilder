@@ -98,6 +98,28 @@ TEST(StringBuilder, Riddle_InPlace100)
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
 }
 
+template<typename T>
+struct vec3 {
+    T x, y, z;
+};
+
+template<typename SB, typename T>
+struct Appender<SB, vec3<T>> {
+    void operator()(SB& sb, const vec3<T>& v) {
+        sb << '[' << v.x << ' ' << v.y << ' ' << v.z << ']';
+    }
+};
+
+template<typename T>
+vec3<T> make_vec3(T&& x, T&& y, T&& z) { return vec3<T>{std::forward<T>(x), std::forward<T>(y), std::forward<T>(z)}; }
+
+TEST(StringBuilder, CustomAppender)
+{
+    stringbuilder<> sb;
+    sb << make_vec3('x', 'y', 'z') << " :: " << make_vec3(-12, 23, -34);
+    EXPECT_EQ(std::to_string(sb), "[x y z] :: [-12 23 -34]");
+}
+
 TEST(MakeString, Simple)
 {
     EXPECT_EQ(make_string('a', "bcd", 'x'), "abcdx");
@@ -120,13 +142,14 @@ TEST(Perf, IntegerSequence)
     using Clock = std::chrono::high_resolution_clock;
 
     {
-        const auto time0 = Clock::now();
+        auto time0 = Clock::now();
         for (int iter = 0; iter < iterCount; ++iter)
         {
+            if (iter == iterCount / 2) time0 = Clock::now();
+
             std::string s;
             for (int i = -span; i <= span; ++i) {
-                s += std::to_string(i);
-                s += ' ';
+                s += std::to_string(i) + ' ';
             }
             volatile auto ssize = s.size();
         }
@@ -135,13 +158,14 @@ TEST(Perf, IntegerSequence)
     }
 
     {
-        const auto time0 = Clock::now();
+        auto time0 = Clock::now();
         for (int iter = 0; iter < iterCount; ++iter)
         {
+            if (iter == iterCount / 2) time0 = Clock::now();
+
             std::stringstream ss;
             for (int i = -span; i <= span; ++i) {
-                ss << i;
-                ss << ' ';
+                ss << i << ' ';
             }
             std::string s = ss.str();
             volatile auto ssize = s.size();
@@ -151,9 +175,11 @@ TEST(Perf, IntegerSequence)
     }
 
     {
-        const auto time0 = Clock::now();
+        auto time0 = Clock::now();
         for (int iter = 0; iter < iterCount; ++iter)
         {
+            if (iter == iterCount / 2) time0 = Clock::now();
+
             inplace_stringbuilder<SufficientMaxSize> sb;
             for (int i = -span; i <= span; ++i) {
                 sb << i;
@@ -167,9 +193,11 @@ TEST(Perf, IntegerSequence)
     }
 
     {
-        const auto time0 = Clock::now();
+        auto time0 = Clock::now();
         for (int iter = 0; iter < iterCount; ++iter)
         {
+            if (iter == iterCount / 2) time0 = Clock::now();
+
             stringbuilder<0> sb;
             for (int i = -span; i < span; ++i) {
                 sb << i;
@@ -183,9 +211,11 @@ TEST(Perf, IntegerSequence)
     }
 
     {
-        const auto time0 = Clock::now();
+        auto time0 = Clock::now();
         for (int iter = 0; iter < iterCount; ++iter)
         {
+            if (iter == iterCount / 2) time0 = Clock::now();
+
             stringbuilder<SufficientMaxSize> sb;
             for (int i = -span; i < span; ++i) {
                 sb << i;

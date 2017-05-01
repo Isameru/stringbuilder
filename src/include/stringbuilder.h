@@ -32,19 +32,19 @@
 #include <type_traits>
 #include <string_view>
 
+// Appender is an utility class for encoding various kinds of objects (integers) and their propagation to stringbuilder or inplace_stringbuilder.
+//
+
+// Unless there are suitable converters, make use of std::to_string() to stringify the object.
+template<typename SB, typename T, typename Enable = void>
+struct Appender {
+    void operator()(SB& sb, const T& v) const {
+        sb.append(std::to_string(v));
+    }
+};
+
 namespace detail
 {
-    // Appender is an utility class for encoding various kinds of objects (chars, strings, integers) and their propagation to stringbuilder or inplace_stringbuilder.
-    //
-
-    // Unless there are suitable converters, make use of std::to_string() to stringify the object.
-    template<typename SB, typename T, typename Enable = void>
-    struct Appender {
-        void operator()(SB& sb, const T& v) const {
-            sb.append(std::to_string(v));
-        }
-    };
-
     template<typename SB>
     struct Appender<SB, const typename SB::char_type*>
     {
@@ -63,7 +63,7 @@ namespace detail
             // In this particular case, std::div() is x2 slower instead of / and %.
             if (iv >= 0) {
                 if (iv >= 10) {
-                    basic_inplace_stringbuilder<SB::char_type, 20, false, SB::traits_type> bss;
+                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, SB::traits_type> bss;
                     do {
                         bss.append(static_cast<typename SB::char_type>('0' + iv % 10));
                         iv /= 10;
@@ -74,7 +74,7 @@ namespace detail
                 }
             } else {
                 if (iv <= -10) {
-                    basic_inplace_stringbuilder<SB::char_type, 20, false, SB::traits_type> bss;
+                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, SB::traits_type> bss;
                     do {
                         bss.append(static_cast<typename SB::char_type>('0' - iv % 10));
                         iv /= 10;
@@ -534,7 +534,7 @@ namespace detail
             return *(static_cast<Char*>(tailChunk->data) + tailChunk->consumed++);
         }
 
-        size_type determineNextChunkSize() const noexcept { return (2 * tailChunk->reserved + 63) / 64 * 64; }
+        size_type determineNextChunkSize() const noexcept { return 2 * tailChunk->reserved; }
 
     private:
         ChunkInPlace<InPlaceSize> headChunkInPlace;
@@ -570,16 +570,16 @@ template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<ch
 using inplace_u32stringbuilder = detail::basic_inplace_stringbuilder<char32_t, MaxSize, Forward, Traits>;
 
 
-template<int InPlaceSize, typename Traits = std::char_traits<char>,typename Alloc = std::allocator<char>>
+template<int InPlaceSize = 0, typename Traits = std::char_traits<char>,typename Alloc = std::allocator<char>>
 using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Traits, Alloc>;
 
-template<int InPlaceSize, typename Traits = std::char_traits<wchar_t>, typename Alloc = std::allocator<wchar_t>>
+template<int InPlaceSize = 0, typename Traits = std::char_traits<wchar_t>, typename Alloc = std::allocator<wchar_t>>
 using wstringbuilder = detail::basic_stringbuilder<wchar_t, InPlaceSize, Traits, Alloc>;
 
-template<int InPlaceSize, typename Traits = std::char_traits<char16_t>, typename Alloc = std::allocator<char16_t>>
+template<int InPlaceSize = 0, typename Traits = std::char_traits<char16_t>, typename Alloc = std::allocator<char16_t>>
 using u16stringbuilder = detail::basic_stringbuilder<char16_t, InPlaceSize, Traits, Alloc>;
 
-template<int InPlaceSize, typename Traits = std::char_traits<char32_t>, typename Alloc = std::allocator<char32_t>>
+template<int InPlaceSize = 0, typename Traits = std::char_traits<char32_t>, typename Alloc = std::allocator<char32_t>>
 using u32wstringbuilder = detail::basic_stringbuilder<char32_t, InPlaceSize, Traits, Alloc>;
 
 
