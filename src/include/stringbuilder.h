@@ -24,13 +24,13 @@
 
 #include <assert.h>
 #include <array>
-#include <sstream>
-#include <utility>
 #include <deque>
+#include <sstream>
 #include <memory>
 #include <numeric>
-#include <type_traits>
+#include <utility>
 #include <string_view>
+#include <type_traits>
 
 // Appender is an utility class for encoding various kinds of objects (integers) and their propagation to stringbuilder or inplace_stringbuilder.
 //
@@ -384,6 +384,18 @@ namespace detail
 
         size_type length() const noexcept { return size(); }
 
+        void reserve(size_type size)
+        {
+            for (Chunk* chunk = tailChunk; size > chunk->reserved - chunk->consumed; chunk = chunk->next)
+            {
+                size -= chunk->reserved - chunk->consumed;
+                assert(size > 0);
+                if (chunk->next == nullptr) {
+                    chunk->next = allocChunk(determineNextChunkSize(size));
+                }
+            }
+        }
+
         basic_stringbuilder& append(char_type ch)
         {
             assert(ch != '\0');
@@ -490,9 +502,16 @@ namespace detail
         }
 
     private:
+        size_type roundToL1DataCacheLine(size_type size)
+        {
+            constexpr size_type l1DataCacheLineSize = 64; //std::hardware_destructive_interference_size;
+            return ((l1DataCacheLineSize - 1) + size) / l1DataCacheLineSize * l1DataCacheLineSize;
+        }
+
         Chunk* allocChunk(size_type reserve)
         {
-            const auto chunkTotalSize = (63 + sizeof(ChunkHeader) + sizeof(Char) * reserve) / 64 * 64;
+            assert(reserve > 0);
+            const auto chunkTotalSize = roundToL1DataCacheLine(reserve);
             auto* rawChunk = AllocTraits::allocate(get_rebound_allocator(), chunkTotalSize, tailChunk);
             auto* chunk = reinterpret_cast<Chunk*>(rawChunk);
             AllocTraits::construct<Chunk>(get_rebound_allocator(), chunk, chunkTotalSize - sizeof(ChunkHeader));
@@ -502,20 +521,22 @@ namespace detail
         Chunk* headChunk() noexcept { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
         const Chunk* headChunk() const noexcept { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
 
-        std::pair<Char*, size_type> claim(size_type length, size_type minimum)
+        std::pair<Char*, size_type> claim(size_type maximum, size_type minimum)
         {
+            assert(maximum >= minimum);
             auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
             assert(tailChunkLeft >= 0);
             if (tailChunkLeft < minimum)
             {
-                const size_type newChunkLength = std::max(minimum, determineNextChunkSize());
-                tailChunk = tailChunk->next = allocChunk(newChunkLength);
-                assert(newChunkLength <= tailChunk->reserved);
-                tailChunkLeft = newChunkLength;
+                if (tailChunk->next == nullptr) {
+                    tailChunk->next = allocChunk(determineNextChunkSize(maximum - tailChunkLeft));
+                }
+                tailChunk = tailChunk->next;
+                tailChunkLeft = tailChunk->reserved;
             }
 
             assert(tailChunkLeft >= minimum);
-            const size_type claimed = std::min(tailChunkLeft, length);
+            const size_type claimed = std::min(tailChunkLeft, maximum);
             auto retval = std::make_pair(static_cast<Char*>(tailChunk->data) + tailChunk->consumed, claimed);
             tailChunk->consumed += claimed;
             return retval;
@@ -527,14 +548,15 @@ namespace detail
             assert(tailChunkLeft >= 0);
             if (tailChunkLeft < 1)
             {
-                const size_type newChunkLength = determineNextChunkSize();
-                tailChunk = tailChunk->next = allocChunk(newChunkLength);
-                assert(newChunkLength <= tailChunk->reserved);
+                if (tailChunk->next == nullptr) {
+                    tailChunk->next = allocChunk(determineNextChunkSize(1));
+                }
+                tailChunk = tailChunk->next;
             }
             return *(static_cast<Char*>(tailChunk->data) + tailChunk->consumed++);
         }
 
-        size_type determineNextChunkSize() const noexcept { return 2 * tailChunk->reserved; }
+        size_type determineNextChunkSize(size_type minimum) const noexcept { return std::max(2 * tailChunk->reserved, minimum); }
 
     private:
         ChunkInPlace<InPlaceSize> headChunkInPlace;

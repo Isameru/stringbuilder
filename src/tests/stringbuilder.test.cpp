@@ -69,7 +69,6 @@ TEST(InPlaceStringBuilder, EncodeOther)
     }
 }
 
-
 TEST(StringBuilder, Riddle_InPlace0)
 {
     auto sb = stringbuilder<0>{};
@@ -96,6 +95,15 @@ TEST(StringBuilder, Riddle_InPlace100)
     stringbuilder<100> sb;
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     EXPECT_EQ(std::to_string(sb), "There are 8 bits in a single byte.");
+}
+
+TEST(StringBuilder, Reserve)
+{
+    auto sb = stringbuilder<5>{};
+    sb << "abcd";
+    sb.reserve(2);
+    sb << "xyzw";
+    EXPECT_EQ(std::to_string(sb), "abcdxyzw");
 }
 
 template<typename T>
