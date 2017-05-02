@@ -89,6 +89,22 @@ namespace detail
         }
     };
 
+    template<int ExpectedSize, typename StringT>
+    struct sized_str_t
+    {
+        StringT str;
+        sized_str_t(StringT s) : str(std::move(s)) {}
+    };
+
+    template<typename SB, int ExpectedSize, typename StringT>
+    struct Appender<SB, sized_str_t<ExpectedSize, StringT>>
+    {
+        void operator()(SB& sb, const detail::sized_str_t<ExpectedSize, StringT>& sizedStr) const
+        {
+            sb.append(sizedStr.str);
+        }
+    };
+
     // Provides means for building size-delimited strings in-place (without heap allocations).
     // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
     // In debug mode appending ensures that the built string does not exceed the available space.
@@ -653,17 +669,11 @@ auto sized_str(StringT&& str)
     return detail::sized_str_t<ExpectedSize, StringT>{ std::forward<StringT>(str) };
 }
 
+
 namespace detail
 {
     template <typename T>
     struct type {};
-
-    template<int ExpectedSize, typename StringT>
-    struct sized_str_t
-    {
-        StringT str;
-        sized_str_t(StringT s) : str(std::move(s)) {}
-    };
 
     constexpr int estimateTypeSize(type<char>)
     {
@@ -681,6 +691,12 @@ namespace detail
     {
         return ExpectedSize;
     }
+
+    //template<typename IntegralT>
+    //constexpr int estimateTypeSize(type<std::enable_if_t<std::is_integral_v<IntegralT>, IntegralT>>)
+    //{
+    //    return 20;
+    //}
 
     template<typename T>
     constexpr int estimateTypeSeqSize(type<T> v)
@@ -777,9 +793,9 @@ namespace detail
         constexpr auto operator()(TX&&... vx) const
         {
             constexpr int estimatedSize = estimateTypeSeqSize(type<TX>{}...);
-            stringbuilder<estimatedSize> ss;
-            ss.append_many(vx...);
-            return ss.str();
+            stringbuilder<estimatedSize> sb;
+            sb.append_many(vx...);
+            return sb.str();
         }
     };
 
