@@ -106,6 +106,25 @@ TEST(StringBuilder, Reserve)
     EXPECT_EQ(std::to_string(sb), "abcdxyzw");
 }
 
+TEST(StringBuilder, AppendCharMulti)
+{
+    auto sb = stringbuilder<5>{};
+    sb.append('.', 10);
+    auto ipsb = inplace_stringbuilder<10>{};
+    ipsb.append('.', 10);
+    EXPECT_EQ(std::to_string(sb), std::to_string(ipsb));
+}
+
+TEST(StringBuilder, AppendStringBuilder)
+{
+    auto sb = stringbuilder<5>{};
+    sb << "123 ";
+    sb << sb;
+    sb << sb;
+    sb << sb;
+    EXPECT_EQ(std::to_string(sb), "123 123 123 123 123 123 123 123 ");
+}
+
 template<typename T>
 struct vec3 {
     T x, y, z;

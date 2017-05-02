@@ -63,7 +63,7 @@ namespace detail
             // In this particular case, std::div() is x2 slower instead of / and %.
             if (iv >= 0) {
                 if (iv >= 10) {
-                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, SB::traits_type> bss;
+                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, typename SB::traits_type> bss;
                     do {
                         bss.append(static_cast<typename SB::char_type>('0' + iv % 10));
                         iv /= 10;
@@ -74,7 +74,7 @@ namespace detail
                 }
             } else {
                 if (iv <= -10) {
-                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, SB::traits_type> bss;
+                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, typename SB::traits_type> bss;
                     do {
                         bss.append(static_cast<typename SB::char_type>('0' - iv % 10));
                         iv /= 10;
@@ -124,6 +124,18 @@ namespace detail
                 data_[consumed++] = ch;
             } else {
                 data_[MaxSize - (++consumed)] = ch;
+            }
+            return *this;
+        }
+
+        basic_inplace_stringbuilder& append(char_type ch, size_type count) noexcept
+        {
+            assert(ch != '\0');
+            assert(consumed + count <= MaxSize);
+            if /*constexpr*/ (Forward) {
+                while (count-- > 0) data_[consumed++] = ch;
+            } else {
+                while (count-- > 0) data_[MaxSize - (++consumed)] = ch;
             }
             return *this;
         }
@@ -403,6 +415,19 @@ namespace detail
             return *this;
         }
 
+        basic_stringbuilder& append(char_type ch, size_type count)
+        {
+            assert(ch != '\0');
+            for (auto left = count; left > 0;) {
+                const auto claimed = claim(left, 1);
+                for(size_type i = 0; i < claimed.second; ++i) {
+                    claimed.first[i] = ch;
+                }
+                left -= claimed.second;
+            }
+            return *this;
+        }
+
         template<size_type StrSizeWith0>
         basic_stringbuilder& append(const char_type(&str)[StrSizeWith0])
         {
@@ -457,9 +482,26 @@ namespace detail
         }
 
         template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
-        basic_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
+        basic_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& sb) noexcept
         {
-            return append(ss.str_view());
+            return append(sb.str_view());
+        }
+
+        template<size_type OtherInPlaceSize, typename OtherTraits, typename OtherAlloc>
+        basic_stringbuilder& append(const basic_stringbuilder<char_type, OtherInPlaceSize, OtherTraits, OtherAlloc>& sb) noexcept
+        {
+            size_type size = sb.size();
+            reserve(size);
+
+            const Chunk* chunk = sb.headChunk();
+            while (size > 0) {
+                assert(chunk != nullptr);
+                const size_type toCopy = std::min(size, chunk->consumed);
+                append(chunk->data, toCopy);
+                size -= toCopy;
+                chunk = chunk->next;
+            }
+            return *this;
         }
 
         // Defining append(AnyT&& any) generates a plethora of class specialization issues.
