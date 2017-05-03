@@ -149,15 +149,17 @@ TEST(StringBuilder, CustomAppender)
 
 TEST(MakeString, Simple)
 {
-    EXPECT_EQ(make_string('a', "bcd", 'x'), "abcdx");
-    EXPECT_EQ(make_string("There", ' ', "are ", '8', " bits in a ", "single byte", '.'), "There are 8 bits in a single byte.");
+    EXPECT_EQ(make_string("There", ' ', "are ", 8, " bits in a ", "single byte", '.'), "There are 8 bits in a single byte.");
 }
 
 TEST(MakeString, Constexpr_Simple)
 {
-    constexpr auto a = make_string('a', 'b', 'c');
-    constexpr auto e = std::array<char, 4>{ 'a', 'b', 'c', '\0' };
-    EXPECT_EQ(a, e);
+    {   constexpr auto s = make_string('a', "bcd", 'x');
+        ASSERT_STREQ(s.c_str, "abcdx");
+    }
+    {   constexpr auto s = make_string("There", ' ', "are ", '8', " bits in a ", "single byte", '.');
+        ASSERT_STREQ(s.c_str, "There are 8 bits in a single byte.");
+    }
 }
 
 TEST(Perf, IntegerSequence)

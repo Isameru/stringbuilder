@@ -93,7 +93,6 @@ namespace detail
     struct sized_str_t
     {
         StringT str;
-        sized_str_t(StringT s) : str(std::move(s)) {}
     };
 
     template<typename SB, int ExpectedSize, typename StringT>
@@ -670,45 +669,58 @@ auto sized_str(StringT&& str)
 }
 
 
+template<typename CharT, size_t N, size_t... IX>
+struct constexpr_str
+{
+    const std::array<CharT, N> arr;
+    const CharT c_str[N];
+
+    constexpr constexpr_str(const std::array<CharT, N> arr_, const std::index_sequence<IX...>) :
+        arr{arr_},
+        c_str{ arr_[IX]... }
+    { }
+};
+
+
 namespace detail
 {
     template <typename T>
-    struct type {};
+    struct type { using value_type = T; };
 
-    constexpr int estimateTypeSize(type<char>)
-    {
+    template<typename CharT>
+    constexpr int estimateTypeSize(type<CharT>) {
         return 1;
     }
 
-    template<int StrSizeWith0>
-    constexpr int estimateTypeSize(type<const char(&)[StrSizeWith0]>)
+    template<typename CharT, typename IntegralT>
+    constexpr int estimateTypeSize(type<IntegralT>, std::enable_if_t<std::is_integral_v<IntegralT> && !std::is_same_v<CharT, IntegralT>>* = 0) {
+        return 20;
+    }
+
+    template<typename CharT, int StrSizeWith0>
+    constexpr int estimateTypeSize(type<const CharT[StrSizeWith0]>)
     {
         return StrSizeWith0 - 1;
     }
 
-    template<int ExpectedSize, typename StringT>
+    template<typename CharT, int ExpectedSize, typename StringT>
     constexpr int estimateTypeSize(type<sized_str_t<ExpectedSize, StringT>>)
     {
         return ExpectedSize;
     }
 
-    //template<typename IntegralT>
-    //constexpr int estimateTypeSize(type<std::enable_if_t<std::is_integral_v<IntegralT>, IntegralT>>)
-    //{
-    //    return 20;
-    //}
-
-    template<typename T>
-    constexpr int estimateTypeSeqSize(type<T> v)
+    template<typename CharT, typename T>
+    constexpr int estimateTypeSeqSize(type<T> t)
     {
-        return estimateTypeSize(v);
+        return estimateTypeSize<CharT>(t);
     }
 
-    template<typename T1, typename... TX>
-    constexpr int estimateTypeSeqSize(type<T1> v1, type<TX>... vx)
+    template<typename CharT, typename T1, typename... TX>
+    constexpr int estimateTypeSeqSize(type<T1> t1, type<TX>... tx)
     {
-        return estimateTypeSize(v1) + estimateTypeSeqSize(vx...);
+        return estimateTypeSize<CharT>(t1) + estimateTypeSeqSize<CharT>(tx...);
     }
+
 
     template<size_t S1, size_t S2, std::size_t... I1, std::size_t... I2>
     constexpr auto concatenateArrayPair(const std::array<char, S1> arr1, const std::array<char, S2> arr2, std::index_sequence<I1...>, std::index_sequence<I2...>)
@@ -734,85 +746,86 @@ namespace detail
         return arr;
     }
 
-    /*
-    template<size_t S, size_t... I>
-    struct CharArrayHelper
-    {
-        char ch[S];
 
-        constexpr CharArrayHelper(const std::array<char, S> arr) :
-            ch{ arr[I]... }
-        { }
-    };
-
-    template<size_t S, size_t... I>
-    constexpr auto toCharArray(const std::array<char, S> arr, std::index_sequence<I...>)
-    {
-        return CharArrayHelper<S, I...> { arr };
-    }
-
-    template<size_t S>
-    constexpr auto toCharArray(const std::array<char, S> arr)
-    {
-        return toCharArray(arr, std::make_index_sequence<S>());
-    }
-    */
-
-    constexpr std::array<char, 1> stringify(char c)
+    template<typename CharT>
+    constexpr std::array<char, 1> stringify(CharT c)
     { return { c }; }
 
-    template<typename T, typename = std::void_t<>>
+    template<typename CharT, typename IntegralT>
+    constexpr std::enable_if_t<std::is_integral_v<IntegralT> && !std::is_same_v<CharT, IntegralT>> stringify(IntegralT) = delete;
+
+    template<typename CharT, size_t N, size_t... IX>
+    constexpr std::array<CharT, sizeof...(IX)> stringify(const CharT(&c)[N], std::index_sequence<IX...>)
+    { return { c[IX]... }; }
+
+    template<typename CharT, size_t N>
+    constexpr std::array<char, N - 1> stringify(const CharT(&c)[N])
+    { return stringify<CharT>(c, std::make_index_sequence<N - 1>()); }
+
+
+    template<typename CharT, typename T, typename = std::void_t<>>
     struct CanStringify : std::false_type {};
 
-    template<typename T>
-    struct CanStringify<T, std::void_t<decltype(stringify(std::declval<T>()))>> : std::true_type {};
+    template<typename CharT, typename T>
+    struct CanStringify<CharT, T, std::void_t<decltype(stringify<CharT>(std::declval<T>()))>> : std::true_type {};
 
-    template<typename T>
+    template<typename CharT, typename T>
     constexpr bool canStringify(type<T>)
-    { return CanStringify<T>::value; }
+    { return CanStringify<CharT, T>::value; }
 
-    template<typename T1, typename... TX>
+    template<typename CharT, typename T1, typename... TX>
     constexpr bool canStringify(type<T1>, type<TX>... tx)
-    { return CanStringify<T1>::value && canStringify(tx...); }
+    { return CanStringify<CharT, T1>::value && canStringify<CharT>(tx...); }
 
-    template<bool Stringify>
+
+    template<typename CharT, bool StringifyConstexpr>
     struct StringMaker
     {
-        template<typename SB, typename T1, typename... TX>
-        constexpr void append(SB& sb, T1&& v1, TX&&... vx) const
-        {
-            sb.append(std::forward<T1>(v1));
-            append(sb, std::forward<TX>(vx)...);
-        }
-
-        template<typename SB, typename T>
-        constexpr void append(SB& sb, T&& v) const
-        {   sb.append(std::forward<T>(v)); }
-        
         template<typename... TX>
-        constexpr auto operator()(TX&&... vx) const
+        auto operator()(TX&&... vx) const
         {
-            constexpr int estimatedSize = estimateTypeSeqSize(type<TX>{}...);
-            stringbuilder<estimatedSize> sb;
-            sb.append_many(vx...);
+            constexpr int estimatedSize = estimateTypeSeqSize<CharT>(type<std::remove_reference_t<std::remove_cv_t<TX>>>{}...);
+            basic_stringbuilder<CharT, estimatedSize, std::char_traits<CharT>, std::allocator<uint8_t>> sb;
+            sb.append_many(std::forward<TX>(vx)...);
             return sb.str();
         }
     };
 
-    template<>
-    struct StringMaker<true>
+    template<typename CharT>
+    struct StringMaker<CharT, true>
     {
+        template<size_t N, size_t... IX>
+        constexpr auto data_of(const std::array<CharT, N> arr, const std::index_sequence<IX...> ix) const
+        {
+            return constexpr_str<CharT, N, IX...>{arr, ix};
+        }
+
+        template<size_t N>
+        constexpr auto data_of(const std::array<CharT, N> arr) const
+        {
+            return data_of(arr, std::make_index_sequence<N>());
+        }
+
         template<typename... TX>
         constexpr auto operator()(TX&&... vx) const
         {
-            //return toCharArray(concatenateArrays(stringify(vx)..., stringify('\0')));
-            return concatenateArrays(stringify(vx)..., stringify('\0'));
+            return data_of(concatenateArrays(stringify<CharT>(vx)..., stringify<CharT>('\0')));
         }
     };
 }
 
 template<typename... TX>
+constexpr auto make_stringbuilder(TX&&... vx)
+{
+    constexpr int estimatedSize = detail::estimateTypeSeqSize<char>(type<TX>{}...);
+    stringbuilder<estimatedSize> sb;
+    sb.append_many(vx...);
+    return sb;
+}
+
+template<typename... TX>
 constexpr auto make_string(TX&&... vx)
 {
-    return detail::StringMaker<detail::canStringify(detail::type<TX>{}...)>{}(std::forward<TX>(vx)...);
+    constexpr bool stringifyConstexpr = detail::canStringify<char>(detail::type<TX>{}...);
+    return detail::StringMaker<char, stringifyConstexpr>{}(std::forward<TX>(vx)...);
 }
