@@ -819,7 +819,7 @@ constexpr auto make_stringbuilder(TX&&... vx)
 {
     constexpr int estimatedSize = detail::estimateTypeSeqSize<char>(type<TX>{}...);
     stringbuilder<estimatedSize> sb;
-    sb.append_many(vx...);
+    sb.append_many(std::forward<TX>(vx)...);
     return sb;
 }
 
