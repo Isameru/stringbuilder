@@ -1,4 +1,4 @@
-![logo](http://raw.githubusercontent.com/isameru/stringbuilder/master/logo.png) `stringbuilder` Utility Library
+![Logo](logo.png) `stringbuilder` Utility Library
 ===========
 
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg?maxAge=3600)](https://raw.githubusercontent.com/isameru/stringbuilder/master/LICENSE)
