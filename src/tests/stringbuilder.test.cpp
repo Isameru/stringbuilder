@@ -155,10 +155,10 @@ TEST(MakeString, Simple)
 TEST(MakeString, Constexpr_Simple)
 {
     {   constexpr auto s = make_string('a', "bcd", 'x');
-        ASSERT_STREQ(s.c_str, "abcdx");
+        ASSERT_STREQ(s.c_str(), "abcdx");
     }
     {   constexpr auto s = make_string("There", ' ', "are ", '8', " bits in a ", "single byte", '.');
-        ASSERT_STREQ(s.c_str, "There are 8 bits in a single byte.");
+        ASSERT_STREQ(s.c_str(), "There are 8 bits in a single byte.");
     }
 }
 

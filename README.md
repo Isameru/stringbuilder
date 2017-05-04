@@ -43,20 +43,50 @@ String size: 52
 ```
 
 `stringbuilder<InPlaceSize>` is a storage of characters (of type `char`) which holds up to `InPlaceSize` character on itself (in-place, so effectively on a thread's stack).
-`operator<<` appends portions of a final string: first using the in-place storage - then: dynamically allocating new chunks on a heap for additional storage.
+`operator<<` appends portions of a final string: first using the in-place storage - then: dynamically allocating new chunks on the heap for additional storage.
 To avoid dynamic memory allocation we can increase the in-place size:
 
 ```cpp
 auto sb = stringbuilder<52>{};
-...
+// ...
 ```
 
 As we know that the resulting string has exactly 52 characters, we can speed up the code:
 
 ```cpp
 auto sb = inplace_stringbuilder<52>{};
-...
+// ...
 ```
 
 `inplace_stringbuilder<MaxSize>` is a pure in-place character storage which can hold up to `MaxSize` characters and no more.
 Exceeding the capacity of this container leads to an assertion failure or memory corruption so it must be used with caution.
+
+## `make_string`
+
+Suppose we need to build an error message - we can do it this way:
+
+```cpp
+const auto fileName = std::string{"settings.config"};
+const int errorCode = 3075;
+// ...
+auto errorMessage = make_string("error", ": ", "Cannot access file ", '"', sized_str<32>(fileName), '"', " (", "errorCode:", errorCode, ')');
+```
+
+This code produces `std::string` with the following message:
+
+`error: Cannot access file "settings.config" (errorCode:3075)`
+
+`make_string` first estimates the resulting string size in compile-time. It is easy for constexpr objects like characters, string literals and integral numbers, but for run-time objects (like the examplar `std::string fileName`) a hint in a form of `sized_str<ExpectedSize>(str)` is necessary.
+In this particular case if `str.size() <= 32` then `make_string` guarantees not to perform a single dynamic memory allocation on the heap, but rather build the string entirely on the current thread's stack.
+
+Now suppose we have a simplier case where all of the string components are constexpr:
+
+```cpp
+constexpr const char fileName[] = "settings.config";
+constexpr auto errorMessage = make_string("error", ": ", "Cannot access file ", '"', fileName, '"');
+constexpr auto errorMessage_c_str = errorMessage.c_str();
+// errorMessage_c_str is a compile-time string literal: "error: Cannot access file "settings.config""
+```
+
+In this case `make_string` returns a compile-time object of type `constexpr_str` which provides `c_str()` member function to `constexpr const char*`.
+This means that the run-time overhead of this code is exactly none.

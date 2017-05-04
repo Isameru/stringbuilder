@@ -672,13 +672,17 @@ auto sized_str(StringT&& str)
 template<typename CharT, size_t N, size_t... IX>
 struct constexpr_str
 {
+private:
     const std::array<CharT, N> arr;
-    const CharT c_str[N];
+    const CharT c_str_[N];
 
+public:
     constexpr constexpr_str(const std::array<CharT, N> arr_, const std::index_sequence<IX...>) :
         arr{arr_},
-        c_str{ arr_[IX]... }
+        c_str_{ arr_[IX]... }
     { }
+
+    constexpr const CharT* c_str() const { return c_str_; }
 };
 
 
