@@ -87,7 +87,7 @@ script:
   - cmake --build .
   - |
     if [[ "${UNIT_TESTS}" == "ON" ]]; then
-      src/tests/unit_tests
+      src/tests/stringbuilder.test
     fi
 after_success:
   - |
