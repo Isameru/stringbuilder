@@ -57,11 +57,12 @@ auto sized_str(StringT&& str)
 // Appender is an utility class for encoding various kinds of objects (integers) and their propagation to stringbuilder or inplace_stringbuilder.
 //
 
-// Unless there are suitable converters, make use of std::to_string() to stringify the object.
+// Unless there are suitable converters, make use of to_string() to stringify the object.
 template<typename SB, typename T, typename Enable = void>
 struct sb_appender {
     void operator()(SB& sb, const T& v) const {
-        sb.append(std::to_string(v));
+        using namespace std; // ADL-aware
+        sb.append(to_string(v));
     }
 };
 
