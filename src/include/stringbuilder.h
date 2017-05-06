@@ -29,644 +29,659 @@
 #include <memory>
 #include <numeric>
 #include <utility>
-#include <string_view>
 #include <type_traits>
+#ifdef __GNUC__
+#include <experimental/string_view>
+namespace std {
+    template<typename... AnyT> using basic_string_view = experimental::basic_string_view<AnyT...>;
+    template<typename... AnyT> using void_t = __void_t<AnyT...>;
+}
+#else
+#include <string_view>
+#endif
+
+
+template<size_t ExpectedSize, typename StringT>
+struct sized_str_t
+{
+    StringT str;
+};
+
+template<size_t ExpectedSize, typename StringT>
+auto sized_str(StringT&& str)
+{
+    return sized_str_t<ExpectedSize, StringT>{ std::forward<StringT>(str) };
+}
+
 
 // Appender is an utility class for encoding various kinds of objects (integers) and their propagation to stringbuilder or inplace_stringbuilder.
 //
 
 // Unless there are suitable converters, make use of std::to_string() to stringify the object.
 template<typename SB, typename T, typename Enable = void>
-struct Appender {
+struct sb_appender {
     void operator()(SB& sb, const T& v) const {
         sb.append(std::to_string(v));
     }
 };
 
+template<typename SB, size_t ExpectedSize, typename StringT>
+struct sb_appender<SB, sized_str_t<ExpectedSize, StringT>>
+{
+    void operator()(SB& sb, const sized_str_t<ExpectedSize, StringT>& sizedStr) const
+    {
+        sb.append(sizedStr.str);
+    }
+};
+
+template<typename SB>
+struct sb_appender<SB, const typename SB::char_type*>
+{
+    void operator()(SB& sb, const typename SB::char_type* str) const
+    {
+        sb.append_c_str(str);
+    }
+};
+
+
+// Provides means for building size-delimited strings in-place (without heap allocations).
+// Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
+// In debug mode appending ensures that the built string does not exceed the available space.
+// In release mode no such checks are made thus dangerous memory corruption may occur if used incorrectly.
+//
+template<typename CharT,
+    size_t MaxSize,
+    bool Forward,
+    typename Traits>
+class basic_inplace_stringbuilder
+{
+    static_assert(MaxSize > 0, "MaxSize must be greater than zero");
+
+public:
+    using traits_type = Traits;
+    using char_type = CharT;
+    using value_type = char_type;
+    using size_type = size_t;
+    using difference_type = std::ptrdiff_t;
+    using reference = char_type&;
+    using const_reference = const char_type&;
+    using pointer = char_type*;
+    using const_pointer = const char_type*;
+
+    size_type size() const noexcept { return consumed; }
+    size_type length() const noexcept { return size(); }
+
+    basic_inplace_stringbuilder& append(char_type ch) noexcept
+    {
+        assert(ch != '\0');
+        assert(consumed < MaxSize);
+        if /*constexpr*/ (Forward) {
+            data_[consumed++] = ch;
+        } else {
+            data_[MaxSize - (++consumed)] = ch;
+        }
+        return *this;
+    }
+
+    basic_inplace_stringbuilder& append(char_type ch, size_type count) noexcept
+    {
+        assert(ch != '\0');
+        assert(consumed + count <= MaxSize);
+        if /*constexpr*/ (Forward) {
+            while (count-- > 0) data_[consumed++] = ch;
+        } else {
+            while (count-- > 0) data_[MaxSize - (++consumed)] = ch;
+        }
+        return *this;
+    }
+
+    template<size_type StrSizeWith0>
+    basic_inplace_stringbuilder& append(const char_type(&str)[StrSizeWith0]) noexcept
+    {
+        constexpr size_t strSize = StrSizeWith0 - 1;
+        assert(consumed + StrSizeWith0 <= MaxSize + 1);
+        if (Forward) {
+            Traits::copy(data_.data() + consumed, &str[0], strSize);
+        } else {
+            Traits::copy(data_.data() + MaxSize - strSize - consumed, &str[0], strSize);
+        }
+        consumed += strSize;
+        return *this;
+    }
+
+    template<size_type N>
+    basic_inplace_stringbuilder& append(const std::array<char_type, N>& arr) noexcept
+    {
+        return append(arr.data(), N);
+    }
+
+    basic_inplace_stringbuilder& append(const char_type* str, size_type size) noexcept
+    {
+        assert(consumed + size <= MaxSize);
+        if (Forward) {
+            Traits::copy(data_.data() + consumed, str, size);
+        } else {
+            Traits::copy(data_.data() + MaxSize - size - consumed, str, size);
+        }
+        consumed += size;
+        return *this;
+    }
+
+    basic_inplace_stringbuilder& append_c_str(const char_type* str, size_type size) noexcept
+    {
+        return append(str, size);
+    }
+
+    basic_inplace_stringbuilder& append_c_str(const char_type* str) noexcept
+    {
+        return append(str, Traits::length(str));
+    }
+
+    template<typename OtherTraits, typename OtherAlloc>
+    basic_inplace_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
+    {
+        return append(str.data(), str.size());
+    }
+
+    template<typename OtherTraits>
+    basic_inplace_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
+    {
+        return append(sv.data(), sv.size());
+    }
+
+    template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
+    basic_inplace_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
+    {
+        return append(ss.str_view());
+    }
+
+    template<typename T>
+    basic_inplace_stringbuilder& append(const T& v)
+    {
+        sb_appender<basic_inplace_stringbuilder, T>{}(*this, v);
+        return *this;
+    }
+
+    template<typename AnyT>
+    basic_inplace_stringbuilder& operator<<(AnyT&& any)
+    {
+        return append(std::forward<AnyT>(any));
+    }
+
+    template<typename AnyT>
+    basic_inplace_stringbuilder& append_many(AnyT&& any)
+    {
+        return append(std::forward<AnyT>(any));
+    }
+
+    template<typename AnyT1, typename... AnyTX>
+    basic_inplace_stringbuilder& append_many(AnyT1&& any1, AnyTX&&... anyX)
+    {
+        return append(std::forward<AnyT1>(any1)).append_many(std::forward<AnyTX>(anyX)...);
+    }
+
+    char_type* data() noexcept
+    {
+        return data_.data() + (Forward ? 0 : MaxSize - consumed);
+    }
+
+    const char_type* data() const noexcept
+    {
+        return data_.data() + (Forward ? 0 : MaxSize - consumed);
+    }
+
+    const char_type* c_str() const noexcept
+    {
+        // Placing '\0' at the end of string is a kind of lazy evaluation and is acceptable also for const objects.
+        const_cast<basic_inplace_stringbuilder*>(this)->placeNullTerminator();
+        return data();
+    }
+
+    std::basic_string<char_type> str() const
+    {
+        assert(consumed <= MaxSize);
+        const auto b = data_.cbegin();
+        if /*constexpr*/ (Forward) {
+            return {b, b + consumed};
+        } else {
+            return {b + MaxSize - consumed, b + MaxSize};
+        }
+    }
+
+    std::basic_string_view<char_type, traits_type> str_view() const noexcept
+    {
+        return {data(), size()};
+    }
+
+private:
+    void placeNullTerminator() noexcept
+    {
+        assert(consumed <= MaxSize);
+        const_cast<char_type&>(data_[Forward ? consumed : MaxSize]) = '\0';
+    }
+
+private:
+    size_type consumed = 0;
+    std::array<char_type, MaxSize + 1> data_; // Last character is reserved for '\0'.
+};
+
 namespace detail
 {
-    template<typename SB>
-    struct Appender<SB, const typename SB::char_type*>
-    {
-        void operator()(SB& sb, const typename SB::char_type* str) const
-        {
-            sb.append_c_str(str);
-        }
-    };
-
-    template<typename SB, typename IntegerT>
-    struct Appender<SB, IntegerT, std::enable_if_t<
-        std::is_integral_v<IntegerT> && !std::is_same_v<IntegerT, typename SB::char_type> >>
-    {
-        void operator()(SB& sb, IntegerT iv) const
-        {
-            // In this particular case, std::div() is x2 slower instead of / and %.
-            if (iv >= 0) {
-                if (iv >= 10) {
-                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, typename SB::traits_type> bss;
-                    do {
-                        bss.append(static_cast<typename SB::char_type>('0' + iv % 10));
-                        iv /= 10;
-                    } while (iv > 0);
-                    sb.append(bss);
-                } else {
-                    sb.append(static_cast<typename SB::char_type>('0' + static_cast<char>(iv)));
-                }
-            } else {
-                if (iv <= -10) {
-                    detail::basic_inplace_stringbuilder<typename SB::char_type, 20, false, typename SB::traits_type> bss;
-                    do {
-                        bss.append(static_cast<typename SB::char_type>('0' - iv % 10));
-                        iv /= 10;
-                    } while (iv < 0);
-                    bss.append('-');
-                    sb.append(bss);
-                } else {
-                    sb.append('-');
-                    sb.append(static_cast<typename SB::char_type>('0' - static_cast<char>(iv)));
-                }
-            }
-        }
-    };
-
-    template<int ExpectedSize, typename StringT>
-    struct sized_str_t
-    {
-        StringT str;
-    };
-
-    template<typename SB, int ExpectedSize, typename StringT>
-    struct Appender<SB, sized_str_t<ExpectedSize, StringT>>
-    {
-        void operator()(SB& sb, const detail::sized_str_t<ExpectedSize, StringT>& sizedStr) const
-        {
-            sb.append(sizedStr.str);
-        }
-    };
-
-    // Provides means for building size-delimited strings in-place (without heap allocations).
-    // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings unless there is space available.
-    // In debug mode appending ensures that the built string does not exceed the available space.
-    // In release mode no such checks are made thus dangerous memory corruption may occur if used incorrectly.
-    //
-    template<typename CharT,
-        size_t MaxSize,
-        bool Forward,
-        typename Traits>
-    class basic_inplace_stringbuilder
-    {
-        static_assert(MaxSize > 0, "MaxSize must be greater than zero");
-
-    public:
-        using traits_type = Traits;
-        using char_type = CharT;
-        using value_type = char_type;
-        using size_type = size_t;
-        using difference_type = std::ptrdiff_t;
-        using reference = char_type&;
-        using const_reference = const char_type&;
-        using pointer = char_type*;
-        using const_pointer = const char_type*;
-
-        size_type size() const noexcept { return consumed; }
-        size_type length() const noexcept { return size(); }
-
-        basic_inplace_stringbuilder& append(char_type ch) noexcept
-        {
-            assert(ch != '\0');
-            assert(consumed < MaxSize);
-            if /*constexpr*/ (Forward) {
-                data_[consumed++] = ch;
-            } else {
-                data_[MaxSize - (++consumed)] = ch;
-            }
-            return *this;
-        }
-
-        basic_inplace_stringbuilder& append(char_type ch, size_type count) noexcept
-        {
-            assert(ch != '\0');
-            assert(consumed + count <= MaxSize);
-            if /*constexpr*/ (Forward) {
-                while (count-- > 0) data_[consumed++] = ch;
-            } else {
-                while (count-- > 0) data_[MaxSize - (++consumed)] = ch;
-            }
-            return *this;
-        }
-
-        template<size_type StrSizeWith0>
-        basic_inplace_stringbuilder& append(const char_type(&str)[StrSizeWith0]) noexcept
-        {
-            constexpr size_t strSize = StrSizeWith0 - 1;
-            assert(consumed + StrSizeWith0 <= MaxSize + 1);
-            if (Forward) {
-                Traits::copy(data_.data() + consumed, &str[0], strSize);
-            } else {
-                Traits::copy(data_.data() + MaxSize - strSize - consumed, &str[0], strSize);
-            }
-            consumed += strSize;
-            return *this;
-        }
-
-        template<size_type N>
-        basic_inplace_stringbuilder& append(const std::array<char_type, N>& arr) noexcept
-        {
-            return append(arr.data(), N);
-        }
-
-        basic_inplace_stringbuilder& append(const char_type* str, size_type size) noexcept
-        {
-            assert(consumed + size <= MaxSize);
-            if (Forward) {
-                Traits::copy(data_.data() + consumed, str, size);
-            } else {
-                Traits::copy(data_.data() + MaxSize - size - consumed, str, size);
-            }
-            consumed += size;
-            return *this;
-        }
-
-        basic_inplace_stringbuilder& append_c_str(const char_type* str, size_type size) noexcept
-        {
-            return append(str, size);
-        }
-
-        basic_inplace_stringbuilder& append_c_str(const char_type* str) noexcept
-        {
-            return append(str, Traits::length(str));
-        }
-
-        template<typename OtherTraits, typename OtherAlloc>
-        basic_inplace_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
-        {
-            return append(str.data(), str.size());
-        }
-
-        template<typename OtherTraits>
-        basic_inplace_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
-        {
-            return append(sv.data(), sv.size());
-        }
-
-        template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
-        basic_inplace_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& ss) noexcept
-        {
-            return append(ss.str_view());
-        }
-
-        // Defining append(AnyT&& any) generates a plethora of class specialization issues.
-
-        template<typename T>
-        basic_inplace_stringbuilder& append(const T& v)
-        {
-            Appender<basic_inplace_stringbuilder, T>{}(*this, v);
-            return *this;
-        }
-
-        template<typename AnyT>
-        basic_inplace_stringbuilder& operator<<(AnyT&& any)
-        {
-            return append(std::forward<AnyT>(any));
-        }
-
-        template<typename AnyT>
-        basic_inplace_stringbuilder& append_many(AnyT&& any)
-        {
-            return append(std::forward<AnyT1>(any));
-        }
-
-        template<typename AnyT1, typename... AnyTX>
-        basic_inplace_stringbuilder& append_many(AnyT1&& any1, AnyTX&&... anyX)
-        {
-            return append(std::forward<AnyT1>(any1)).append_many(std::forward<AnyTX>(anyX)...);
-        }
-
-        char_type* data() noexcept
-        {
-            return data_.data() + (Forward ? 0 : MaxSize - consumed);
-        }
-
-        const char_type* data() const noexcept
-        {
-            return data_.data() + (Forward ? 0 : MaxSize - consumed);
-        }
-
-        const char_type* c_str() const noexcept
-        {
-            // Placing '\0' at the end of string is a kind of lazy evaluation and is acceptable also for const objects.
-            const_cast<basic_inplace_stringbuilder*>(this)->placeNullTerminator();
-            return data();
-        }
-
-        std::basic_string<char_type> str() const
-        {
-            assert(consumed <= MaxSize);
-            const auto b = data_.cbegin();
-            if /*constexpr*/ (Forward) {
-                return {b, b + consumed};
-            } else {
-                return {b + MaxSize - consumed, b + MaxSize};
-            }
-        }
-
-        std::basic_string_view<char_type, traits_type> str_view() const noexcept
-        {
-            return {data(), size()};
-        }
-
-    private:
-        void placeNullTerminator() noexcept
-        {
-            assert(consumed <= MaxSize);
-            const_cast<char_type&>(data_[Forward ? consumed : MaxSize]) = '\0';
-        }
-
-    private:
-        size_type consumed = 0;
-        std::array<char_type, MaxSize + 1> data_; // Last character is reserved for '\0'.
-    };
-
     // The following code is based on ebo_helper explained in this talk:
     // https://youtu.be/hHQS-Q7aMzg?t=3039
     //
-    template<typename OrigAlloc, bool UseEbo = !std::is_final_v<OrigAlloc> && std::is_empty_v<OrigAlloc>>
+    template<typename OrigAlloc, bool UseEbo = !std::is_final<OrigAlloc>::value && std::is_empty<OrigAlloc>::value>
     struct raw_alloc_provider;
 
     template<typename OrigAlloc>
-    struct raw_alloc_provider<OrigAlloc, true> : private std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>
+    struct raw_alloc_provider<OrigAlloc, true> : private std::allocator_traits<OrigAlloc>::template rebind_alloc<uint8_t>
     {
-        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
+        using AllocRebound = typename std::allocator_traits<OrigAlloc>::template rebind_alloc<uint8_t>;
 
         template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : AllocRebound{ std::forward<AllocRebound>(otherAlloc) } {}
         constexpr AllocRebound& get_rebound_allocator() { return *this; }
-        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{ *this }; }
+        constexpr OrigAlloc get_original_allocator() const { return OrigAlloc{ *this }; }
     };
 
     template<typename OrigAlloc>
     struct raw_alloc_provider<OrigAlloc, false>
     {
-        using AllocRebound = std::allocator_traits<OrigAlloc>::rebind_alloc<uint8_t>;
+        using AllocRebound = typename std::allocator_traits<OrigAlloc>::template rebind_alloc<uint8_t>;
 
         template<typename OtherAlloc> constexpr explicit raw_alloc_provider(OtherAlloc&& otherAlloc) : alloc_rebound{ std::forward<AllocRebound>(otherAlloc) } {}
         constexpr AllocRebound& get_rebound_allocator() { return alloc_rebound; }
-        constexpr OrigAlloc get_original_allocator() { return OrigAlloc{ alloc_rebound }; }
+        constexpr OrigAlloc get_original_allocator() const { return OrigAlloc{ alloc_rebound }; }
     private:
         AllocRebound alloc_rebound;
     };
 
-    // Provides means for efficient construction of strings.
-    // Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings.
-    // If the available space gets exhausted, new chunks of memory are allocated on the heap.
-    //
-    template<typename Char,
-        size_t InPlaceSize,
-        typename Traits,
-        typename AllocOrig>
-    class basic_stringbuilder : private raw_alloc_provider<AllocOrig>
+
+    struct Chunk;
+
+    struct ChunkHeader
     {
-        using AllocProvider = raw_alloc_provider<AllocOrig>;
-        using Alloc = typename AllocProvider::AllocRebound;
-        using AllocTraits = std::allocator_traits<Alloc>;
+        Chunk* next;
+        size_t consumed;
+        size_t reserved;
+    };
 
-    public:
-        using traits_type = Traits;
-        using char_type = Char;
-        using value_type = char_type;
-        using allocator_type = AllocOrig;
-        using size_type = size_t;
-        using difference_type = std::ptrdiff_t;
-        using reference = char_type&;
-        using const_reference = const char_type&;
-        using pointer = char_type*;
-        using const_pointer = const char_type*;
+    struct Chunk : public ChunkHeader
+    {
+        char data[1]; // In practice there are ChunkHeader::reserved of characters in this array.
 
-    private:
-        struct Chunk;
+        Chunk(size_t reserve) : ChunkHeader{nullptr, size_t{0}, reserve} { }
+    };
 
-        struct ChunkHeader
-        {
-            Chunk* next;
-            size_type consumed;
-            size_type reserved;
-        };
+    template<int DataLength>
+    struct ChunkInPlace : public ChunkHeader
+    {
+        std::array<char, DataLength> data;
 
-        struct Chunk : public ChunkHeader
-        {
-            char_type data[1]; // In practice there are ChunkHeader::reserved of characters in this array.
+        ChunkInPlace() : ChunkHeader{nullptr, 0, DataLength} { }
+    };
 
-            Chunk(size_type reserve) : ChunkHeader{nullptr, size_type{0}, reserve} { }
-        };
-
-        template<int DataLength>
-        struct ChunkInPlace : public ChunkHeader
-        {
-            std::array<char_type, DataLength> data;
-
-            ChunkInPlace() : ChunkHeader{nullptr, 0, DataLength} { }
-        };
-
-        template<>
-        struct ChunkInPlace<0> : public ChunkHeader
-        {
-            ChunkInPlace() : ChunkHeader{nullptr, 0, 0} { }
-        };
-
-    public:
-        constexpr AllocOrig& get_allocator() noexcept { return get_original_allocator(); }
-
-        template<typename AllocOther = Alloc>
-        basic_stringbuilder(AllocOther&& allocOther = AllocOther{}) noexcept : AllocProvider{std::forward<AllocOther>(allocOther)} {}
-
-        basic_stringbuilder(const basic_stringbuilder&) = delete;
-
-        basic_stringbuilder(basic_stringbuilder&& other) noexcept :
-            headChunkInPlace{other.headChunkInPlace},
-            tailChunk{other.tailChunk}
-        {
-            other.headChunkInPlace.next = nullptr;
-        }
-
-        ~basic_stringbuilder()
-        {
-            Chunk* nextChunk = headChunk()->next;
-            for (auto chunk = nextChunk; chunk != nullptr; chunk = nextChunk)
-            {
-                nextChunk = chunk->next;
-                //AllocTraits::destroy...?
-                AllocTraits::deallocate(get_rebound_allocator(), reinterpret_cast<AllocTraits::pointer>(chunk), sizeof(ChunkHeader) + chunk->reserved);
-            }
-        }
-
-        size_type size() const noexcept
-        {
-            size_type size = 0;
-            const auto* chunk = headChunk();
-            do {
-                size += chunk->consumed;
-                chunk = chunk->next;
-            } while (chunk != nullptr);
-            return size;
-        }
-
-        size_type length() const noexcept { return size(); }
-
-        void reserve(size_type size)
-        {
-            for (Chunk* chunk = tailChunk; size > chunk->reserved - chunk->consumed; chunk = chunk->next)
-            {
-                size -= chunk->reserved - chunk->consumed;
-                assert(size > 0);
-                if (chunk->next == nullptr) {
-                    chunk->next = allocChunk(determineNextChunkSize(size));
-                }
-            }
-        }
-
-        basic_stringbuilder& append(char_type ch)
-        {
-            assert(ch != '\0');
-            claimOne() = ch;
-            return *this;
-        }
-
-        basic_stringbuilder& append(char_type ch, size_type count)
-        {
-            assert(ch != '\0');
-            for (auto left = count; left > 0;) {
-                const auto claimed = claim(left, 1);
-                for(size_type i = 0; i < claimed.second; ++i) {
-                    claimed.first[i] = ch;
-                }
-                left -= claimed.second;
-            }
-            return *this;
-        }
-
-        template<size_type StrSizeWith0>
-        basic_stringbuilder& append(const char_type(&str)[StrSizeWith0])
-        {
-            constexpr size_type StrSize = StrSizeWith0 - 1;
-            assert(str[StrSize] == '\0');
-            for (auto left = StrSize; left > 0;)
-            {
-                const auto claimed = claim(left, 1);
-                Traits::copy(claimed.first, &str[StrSize - left], claimed.second);
-                left -= claimed.second;
-            }
-            return *this;
-        }
-
-        template<size_type N>
-        basic_stringbuilder& append(const std::array<char_type, N>& arr) noexcept
-        {
-            return append(arr.data(), N);
-        }
-
-        basic_stringbuilder& append(const char_type* str, size_type size) noexcept
-        {
-            for (auto left = size; left > 0;)
-            {
-                const auto claimed = claim(left, 1);
-                Traits::copy(claimed.first, &str[size - left], claimed.second);
-                left -= claimed.second;
-            }
-            return *this;
-        }
-
-        basic_stringbuilder& append_c_str(const char_type* str, size_type size) noexcept
-        {
-            return append(str, size);
-        }
-
-        basic_stringbuilder& append_c_str(const char_type* str) noexcept
-        {
-            return append(str, Traits::length(str));
-        }
-
-        template<typename OtherTraits, typename OtherAlloc>
-        basic_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
-        {
-            return append(str.data(), str.size());
-        }
-
-        template<typename OtherTraits>
-        basic_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
-        {
-            return append(sv.data(), sv.size());
-        }
-
-        template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
-        basic_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& sb) noexcept
-        {
-            return append(sb.str_view());
-        }
-
-        template<size_type OtherInPlaceSize, typename OtherTraits, typename OtherAlloc>
-        basic_stringbuilder& append(const basic_stringbuilder<char_type, OtherInPlaceSize, OtherTraits, OtherAlloc>& sb) noexcept
-        {
-            size_type size = sb.size();
-            reserve(size);
-
-            const Chunk* chunk = sb.headChunk();
-            while (size > 0) {
-                assert(chunk != nullptr);
-                const size_type toCopy = std::min(size, chunk->consumed);
-                append(chunk->data, toCopy);
-                size -= toCopy;
-                chunk = chunk->next;
-            }
-            return *this;
-        }
-
-        // Defining append(AnyT&& any) generates a plethora of class specialization issues.
-
-        template<typename T>
-        basic_stringbuilder& append(const T& v)
-        {
-            Appender<basic_stringbuilder, T>{}(*this, v);
-            return *this;
-        }
-
-        template<typename AnyT>
-        basic_stringbuilder& operator<<(AnyT&& any)
-        {
-            return append(std::forward<AnyT>(any));
-        }
-
-        template<typename AnyT>
-        basic_stringbuilder& append_many(AnyT&& any)
-        {
-            return append(std::forward<AnyT>(any));
-        }
-
-        template<typename AnyT1, typename... AnyTX>
-        basic_stringbuilder& append_many(AnyT1&& any1, AnyTX&&... anyX)
-        {
-            return append(std::forward<AnyT1>(any1)).append_many(std::forward<AnyTX>(anyX)...);
-        }
-
-        auto str() const
-        {
-            auto str = std::basic_string<char_type>(static_cast<size_t>(size()), '\0');
-            size_type consumed = 0;
-            for (const Chunk* chunk = headChunk(); chunk != nullptr; chunk = chunk->next)
-            {
-                Traits::copy(str.data() + consumed, chunk->data,  chunk->consumed);
-                consumed += chunk->consumed;
-            }
-            return str;
-        }
-
-    private:
-        size_type roundToL1DataCacheLine(size_type size)
-        {
-            constexpr size_type l1DataCacheLineSize = 64; //std::hardware_destructive_interference_size;
-            return ((l1DataCacheLineSize - 1) + size) / l1DataCacheLineSize * l1DataCacheLineSize;
-        }
-
-        Chunk* allocChunk(size_type reserve)
-        {
-            assert(reserve > 0);
-            const auto chunkTotalSize = roundToL1DataCacheLine(reserve);
-            auto* rawChunk = AllocTraits::allocate(get_rebound_allocator(), chunkTotalSize, tailChunk);
-            auto* chunk = reinterpret_cast<Chunk*>(rawChunk);
-            AllocTraits::construct<Chunk>(get_rebound_allocator(), chunk, chunkTotalSize - sizeof(ChunkHeader));
-            return chunk;
-        }
-
-        Chunk* headChunk() noexcept { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
-        const Chunk* headChunk() const noexcept { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
-
-        std::pair<Char*, size_type> claim(size_type maximum, size_type minimum)
-        {
-            assert(maximum >= minimum);
-            auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
-            assert(tailChunkLeft >= 0);
-            if (tailChunkLeft < minimum)
-            {
-                if (tailChunk->next == nullptr) {
-                    tailChunk->next = allocChunk(determineNextChunkSize(maximum - tailChunkLeft));
-                }
-                tailChunk = tailChunk->next;
-                tailChunkLeft = tailChunk->reserved;
-            }
-
-            assert(tailChunkLeft >= minimum);
-            const size_type claimed = std::min(tailChunkLeft, maximum);
-            auto retval = std::make_pair(static_cast<Char*>(tailChunk->data) + tailChunk->consumed, claimed);
-            tailChunk->consumed += claimed;
-            return retval;
-        }
-
-        Char& claimOne()
-        {
-            auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
-            assert(tailChunkLeft >= 0);
-            if (tailChunkLeft < 1)
-            {
-                if (tailChunk->next == nullptr) {
-                    tailChunk->next = allocChunk(determineNextChunkSize(1));
-                }
-                tailChunk = tailChunk->next;
-            }
-            return *(static_cast<Char*>(tailChunk->data) + tailChunk->consumed++);
-        }
-
-        size_type determineNextChunkSize(size_type minimum) const noexcept { return std::max(2 * tailChunk->reserved, minimum); }
-
-    private:
-        ChunkInPlace<InPlaceSize> headChunkInPlace;
-        Chunk* tailChunk = headChunk();
+    template<>
+    struct ChunkInPlace<0> : public ChunkHeader
+    {
+        ChunkInPlace() : ChunkHeader{nullptr, 0, 0} { }
     };
 }
 
+
+// Provides means for efficient construction of strings.
+// Object of this class occupies fixed size (specified at compile time) and allows appending portions of strings.
+// If the available space gets exhausted, new chunks of memory are allocated on the heap.
+//
+template<typename Char,
+    size_t InPlaceSize,
+    typename Traits,
+    typename AllocOrig>
+class basic_stringbuilder : private detail::raw_alloc_provider<AllocOrig>
+{
+    using AllocProvider = detail::raw_alloc_provider<AllocOrig>;
+    using Alloc = typename AllocProvider::AllocRebound;
+    using AllocTraits = std::allocator_traits<Alloc>;
+
+public:
+    using traits_type = Traits;
+    using char_type = Char;
+    using value_type = char_type;
+    using allocator_type = AllocOrig;
+    using size_type = size_t;
+    using difference_type = std::ptrdiff_t;
+    using reference = char_type&;
+    using const_reference = const char_type&;
+    using pointer = char_type*;
+    using const_pointer = const char_type*;
+
+private:
+    using Chunk = detail::Chunk;
+    using ChunkHeader = detail::ChunkHeader;
+    template<int N> using ChunkInPlace = detail::ChunkInPlace<N>;
+
+public:
+    AllocOrig get_allocator() const noexcept { return AllocProvider::get_original_allocator(); }
+
+    template<typename AllocOther = Alloc>
+    basic_stringbuilder(AllocOther&& allocOther = AllocOther{}) noexcept : AllocProvider{std::forward<AllocOther>(allocOther)} {}
+
+    basic_stringbuilder(const basic_stringbuilder&) = delete;
+
+    basic_stringbuilder(basic_stringbuilder&& other) noexcept :
+        AllocProvider{other.get_allocator()},
+        headChunkInPlace{other.headChunkInPlace},
+        tailChunk{other.tailChunk}
+    {
+        other.headChunkInPlace.next = nullptr;
+    }
+
+    ~basic_stringbuilder()
+    {
+        Chunk* nextChunk = headChunk()->next;
+        for (auto chunk = nextChunk; chunk != nullptr; chunk = nextChunk)
+        {
+            nextChunk = chunk->next;
+            //AllocTraits::destroy...?
+            AllocTraits::deallocate(AllocProvider::get_rebound_allocator(), reinterpret_cast<typename AllocTraits::pointer>(chunk), sizeof(ChunkHeader) + chunk->reserved);
+        }
+    }
+
+    size_type size() const noexcept
+    {
+        size_type size = 0;
+        const auto* chunk = headChunk();
+        do {
+            size += chunk->consumed;
+            chunk = chunk->next;
+        } while (chunk != nullptr);
+        return size;
+    }
+
+    size_type length() const noexcept { return size(); }
+
+    void reserve(size_type size)
+    {
+        for (Chunk* chunk = tailChunk; size > chunk->reserved - chunk->consumed; chunk = chunk->next)
+        {
+            size -= chunk->reserved - chunk->consumed;
+            assert(size > 0);
+            if (chunk->next == nullptr) {
+                chunk->next = allocChunk(determineNextChunkSize(size));
+            }
+        }
+    }
+
+    basic_stringbuilder& append(char_type ch)
+    {
+        assert(ch != '\0');
+        claimOne() = ch;
+        return *this;
+    }
+
+    basic_stringbuilder& append(char_type ch, size_type count)
+    {
+        assert(ch != '\0');
+        for (auto left = count; left > 0;) {
+            const auto claimed = claim(left, 1);
+            for(size_type i = 0; i < claimed.second; ++i) {
+                claimed.first[i] = ch;
+            }
+            left -= claimed.second;
+        }
+        return *this;
+    }
+
+    template<size_type StrSizeWith0>
+    basic_stringbuilder& append(const char_type(&str)[StrSizeWith0])
+    {
+        constexpr size_type StrSize = StrSizeWith0 - 1;
+        assert(str[StrSize] == '\0');
+        for (auto left = StrSize; left > 0;)
+        {
+            const auto claimed = claim(left, 1);
+            Traits::copy(claimed.first, &str[StrSize - left], claimed.second);
+            left -= claimed.second;
+        }
+        return *this;
+    }
+
+    template<size_type N>
+    basic_stringbuilder& append(const std::array<char_type, N>& arr) noexcept
+    {
+        return append(arr.data(), N);
+    }
+
+    basic_stringbuilder& append(const char_type* str, size_type size) noexcept
+    {
+        for (auto left = size; left > 0;)
+        {
+            const auto claimed = claim(left, 1);
+            Traits::copy(claimed.first, &str[size - left], claimed.second);
+            left -= claimed.second;
+        }
+        return *this;
+    }
+
+    basic_stringbuilder& append_c_str(const char_type* str, size_type size) noexcept
+    {
+        return append(str, size);
+    }
+
+    basic_stringbuilder& append_c_str(const char_type* str) noexcept
+    {
+        return append(str, Traits::length(str));
+    }
+
+    template<typename OtherTraits, typename OtherAlloc>
+    basic_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
+    {
+        return append(str.data(), str.size());
+    }
+
+    template<typename OtherTraits>
+    basic_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
+    {
+        return append(sv.data(), sv.size());
+    }
+
+    template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
+    basic_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& sb) noexcept
+    {
+        return append(sb.str_view());
+    }
+
+    template<size_type OtherInPlaceSize, typename OtherTraits, typename OtherAlloc>
+    basic_stringbuilder& append(const basic_stringbuilder<char_type, OtherInPlaceSize, OtherTraits, OtherAlloc>& sb) noexcept
+    {
+        size_type size = sb.size();
+        reserve(size);
+
+        const Chunk* chunk = sb.headChunk();
+        while (size > 0) {
+            assert(chunk != nullptr);
+            const size_type toCopy = std::min(size, chunk->consumed);
+            append(chunk->data, toCopy);
+            size -= toCopy;
+            chunk = chunk->next;
+        }
+        return *this;
+    }
+
+    template<typename T>
+    basic_stringbuilder& append(const T& v)
+    {
+        sb_appender<basic_stringbuilder, T>{}(*this, v);
+        return *this;
+    }
+
+    template<typename AnyT>
+    basic_stringbuilder& operator<<(AnyT&& any)
+    {
+        return append(std::forward<AnyT>(any));
+    }
+
+    template<typename AnyT>
+    basic_stringbuilder& append_many(AnyT&& any)
+    {
+        return append(std::forward<AnyT>(any));
+    }
+
+    template<typename AnyT1, typename... AnyTX>
+    basic_stringbuilder& append_many(AnyT1&& any1, AnyTX&&... anyX)
+    {
+        return append(std::forward<AnyT1>(any1)).append_many(std::forward<AnyTX>(anyX)...);
+    }
+
+    auto str() const
+    {
+        auto str = std::basic_string<char_type>(static_cast<size_t>(size()), '\0');
+        size_type consumed = 0;
+        for (const Chunk* chunk = headChunk(); chunk != nullptr; chunk = chunk->next)
+        {
+            Traits::copy(&str[consumed], chunk->data,  chunk->consumed);
+            consumed += chunk->consumed;
+        }
+        return str;
+    }
+
+private:
+    size_type roundToL1DataCacheLine(size_type size)
+    {
+        constexpr size_type l1DataCacheLineSize = 64; //std::hardware_destructive_interference_size;
+        return ((l1DataCacheLineSize - 1) + size) / l1DataCacheLineSize * l1DataCacheLineSize;
+    }
+
+    Chunk* allocChunk(size_type reserve)
+    {
+        assert(reserve > 0);
+        const auto chunkTotalSize = roundToL1DataCacheLine(reserve);
+        auto* rawChunk = AllocTraits::allocate(AllocProvider::get_rebound_allocator(), chunkTotalSize, tailChunk);
+        auto* chunk = reinterpret_cast<Chunk*>(rawChunk);
+        AllocTraits::construct(AllocProvider::get_rebound_allocator(), chunk, chunkTotalSize - sizeof(ChunkHeader));
+        return chunk;
+    }
+
+    Chunk* headChunk() noexcept { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
+    const Chunk* headChunk() const noexcept { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
+
+    std::pair<Char*, size_type> claim(size_type maximum, size_type minimum)
+    {
+        assert(maximum >= minimum);
+        auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
+        assert(tailChunkLeft >= 0);
+        if (tailChunkLeft < minimum)
+        {
+            if (tailChunk->next == nullptr) {
+                tailChunk->next = allocChunk(determineNextChunkSize(maximum - tailChunkLeft));
+            }
+            tailChunk = tailChunk->next;
+            tailChunkLeft = tailChunk->reserved;
+        }
+
+        assert(tailChunkLeft >= minimum);
+        const size_type claimed = std::min(tailChunkLeft, maximum);
+        auto retval = std::make_pair(static_cast<Char*>(tailChunk->data) + tailChunk->consumed, claimed);
+        tailChunk->consumed += claimed;
+        return retval;
+    }
+
+    Char& claimOne()
+    {
+        auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
+        assert(tailChunkLeft >= 0);
+        if (tailChunkLeft < 1)
+        {
+            if (tailChunk->next == nullptr) {
+                tailChunk->next = allocChunk(determineNextChunkSize(1));
+            }
+            tailChunk = tailChunk->next;
+        }
+        return *(static_cast<Char*>(tailChunk->data) + tailChunk->consumed++);
+    }
+
+    size_type determineNextChunkSize(size_type minimum) const noexcept { return std::max(2 * tailChunk->reserved, minimum); }
+
+private:
+    ChunkInPlace<InPlaceSize> headChunkInPlace;
+    Chunk* tailChunk = headChunk();
+};
+
+
 namespace std
 {
-    template<typename CharT, int InPlaceSize, bool Forward, typename Traits>
-    inline auto to_string(const detail::basic_inplace_stringbuilder<CharT, InPlaceSize, Forward, Traits>& sb)
+    template<typename CharT, size_t InPlaceSize, bool Forward, typename Traits>
+    inline auto to_string(const basic_inplace_stringbuilder<CharT, InPlaceSize, Forward, Traits>& sb)
     {
         return sb.str();
     }
 
-    template<typename CharT, int InPlaceSize, typename Traits, typename Alloc>
-    inline auto to_string(const detail::basic_stringbuilder<CharT, InPlaceSize, Traits, Alloc>& sb)
+    template<typename CharT, size_t InPlaceSize, typename Traits, typename Alloc>
+    inline auto to_string(const basic_stringbuilder<CharT, InPlaceSize, Traits, Alloc>& sb)
     {
         return sb.str();
     }
 }
 
 template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<char>>
-using inplace_stringbuilder = detail::basic_inplace_stringbuilder<char, MaxSize, Forward, Traits>;
+using inplace_stringbuilder = basic_inplace_stringbuilder<char, MaxSize, Forward, Traits>;
 
 template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<wchar_t>>
-using inplace_wstringbuilder = detail::basic_inplace_stringbuilder<wchar_t, MaxSize, Forward, Traits>;
+using inplace_wstringbuilder = basic_inplace_stringbuilder<wchar_t, MaxSize, Forward, Traits>;
 
 template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<char16_t>>
-using inplace_u16stringbuilder = detail::basic_inplace_stringbuilder<char16_t, MaxSize, Forward, Traits>;
+using inplace_u16stringbuilder = basic_inplace_stringbuilder<char16_t, MaxSize, Forward, Traits>;
 
 template<int MaxSize, bool Forward = true, typename Traits = std::char_traits<char32_t>>
-using inplace_u32stringbuilder = detail::basic_inplace_stringbuilder<char32_t, MaxSize, Forward, Traits>;
+using inplace_u32stringbuilder = basic_inplace_stringbuilder<char32_t, MaxSize, Forward, Traits>;
 
 
 template<int InPlaceSize = 0, typename Traits = std::char_traits<char>,typename Alloc = std::allocator<char>>
-using stringbuilder = detail::basic_stringbuilder<char, InPlaceSize, Traits, Alloc>;
+using stringbuilder = basic_stringbuilder<char, InPlaceSize, Traits, Alloc>;
 
 template<int InPlaceSize = 0, typename Traits = std::char_traits<wchar_t>, typename Alloc = std::allocator<wchar_t>>
-using wstringbuilder = detail::basic_stringbuilder<wchar_t, InPlaceSize, Traits, Alloc>;
+using wstringbuilder = basic_stringbuilder<wchar_t, InPlaceSize, Traits, Alloc>;
 
 template<int InPlaceSize = 0, typename Traits = std::char_traits<char16_t>, typename Alloc = std::allocator<char16_t>>
-using u16stringbuilder = detail::basic_stringbuilder<char16_t, InPlaceSize, Traits, Alloc>;
+using u16stringbuilder = basic_stringbuilder<char16_t, InPlaceSize, Traits, Alloc>;
 
 template<int InPlaceSize = 0, typename Traits = std::char_traits<char32_t>, typename Alloc = std::allocator<char32_t>>
-using u32wstringbuilder = detail::basic_stringbuilder<char32_t, InPlaceSize, Traits, Alloc>;
+using u32wstringbuilder = basic_stringbuilder<char32_t, InPlaceSize, Traits, Alloc>;
 
 
-template<int ExpectedSize, typename StringT>
-auto sized_str(StringT&& str)
+template<typename SB, typename IntegerT>
+struct sb_appender<SB, IntegerT, std::enable_if_t<
+    std::is_integral<IntegerT>::value && !std::is_same<IntegerT, typename SB::char_type>::value >>
 {
-    return detail::sized_str_t<ExpectedSize, StringT>{ std::forward<StringT>(str) };
-}
+    void operator()(SB& sb, IntegerT iv) const
+    {
+        // In this particular case, std::div() is x2 slower instead of / and %.
+        if (iv >= 0) {
+            if (iv >= 10) {
+                basic_inplace_stringbuilder<typename SB::char_type, 20, false, typename SB::traits_type> bss;
+                do {
+                    bss.append(static_cast<typename SB::char_type>('0' + iv % 10));
+                    iv /= 10;
+                } while (iv > 0);
+                sb.append(bss);
+            } else {
+                sb.append(static_cast<typename SB::char_type>('0' + static_cast<char>(iv)));
+            }
+        } else {
+            if (iv <= -10) {
+                basic_inplace_stringbuilder<typename SB::char_type, 20, false, typename SB::traits_type> bss;
+                do {
+                    bss.append(static_cast<typename SB::char_type>('0' - iv % 10));
+                    iv /= 10;
+                } while (iv < 0);
+                bss.append('-');
+                sb.append(bss);
+            } else {
+                sb.append('-');
+                sb.append(static_cast<typename SB::char_type>('0' - static_cast<char>(iv)));
+            }
+        }
+    }
+};
 
 
 template<typename CharT, size_t N, size_t... IX>
@@ -697,31 +712,27 @@ namespace detail
     }
 
     template<typename CharT, typename IntegralT>
-    constexpr int estimateTypeSize(type<IntegralT>, std::enable_if_t<std::is_integral_v<IntegralT> && !std::is_same_v<CharT, IntegralT>>* = 0) {
+    constexpr int estimateTypeSize(type<IntegralT>, std::enable_if_t<std::is_integral<IntegralT>::value && !std::is_same<CharT, IntegralT>::value>* = 0) {
         return 20;
     }
 
-    template<typename CharT, int StrSizeWith0>
-    constexpr int estimateTypeSize(type<const CharT[StrSizeWith0]>)
-    {
+    template<typename CharT, size_t StrSizeWith0>
+    constexpr int estimateTypeSize(type<const CharT[StrSizeWith0]>) {
         return StrSizeWith0 - 1;
     }
 
-    template<typename CharT, int ExpectedSize, typename StringT>
-    constexpr int estimateTypeSize(type<sized_str_t<ExpectedSize, StringT>>)
-    {
+    template<typename CharT, size_t ExpectedSize, typename StringT>
+    constexpr int estimateTypeSize(type<sized_str_t<ExpectedSize, StringT>>) {
         return ExpectedSize;
     }
 
     template<typename CharT, typename T>
-    constexpr int estimateTypeSeqSize(type<T> t)
-    {
+    constexpr int estimateTypeSeqSize(type<T> t) {
         return estimateTypeSize<CharT>(t);
     }
 
     template<typename CharT, typename T1, typename... TX>
-    constexpr int estimateTypeSeqSize(type<T1> t1, type<TX>... tx)
-    {
+    constexpr int estimateTypeSeqSize(type<T1> t1, type<TX>... tx) {
         return estimateTypeSize<CharT>(t1) + estimateTypeSeqSize<CharT>(tx...);
     }
 
@@ -730,6 +741,12 @@ namespace detail
     constexpr auto concatenateArrayPair(const std::array<char, S1> arr1, const std::array<char, S2> arr2, std::index_sequence<I1...>, std::index_sequence<I2...>)
     {
         return std::array<char, S1 + S2>{ arr1[I1]..., arr2[I2]... };
+    }
+
+    template<size_t S>
+    constexpr auto concatenateArrays(const std::array<char, S> arr)
+    {
+        return arr;
     }
 
     template<size_t S1, size_t S2, size_t... SX>
@@ -744,27 +761,23 @@ namespace detail
         return concatenateArrayPair(arr1, arr2, std::make_index_sequence<arr1.size()>(), std::make_index_sequence<arr2.size()>());
     }
 
-    template<size_t S>
-    constexpr auto concatenateArrays(const std::array<char, S> arr)
-    {
-        return arr;
-    }
-
 
     template<typename CharT>
     constexpr std::array<char, 1> stringify(CharT c)
     { return { c }; }
 
     template<typename CharT, typename IntegralT>
-    constexpr std::enable_if_t<std::is_integral_v<IntegralT> && !std::is_same_v<CharT, IntegralT>> stringify(IntegralT) = delete;
+    constexpr std::enable_if_t<std::is_integral<IntegralT>::value && !std::is_same<CharT, IntegralT>::value> stringify(IntegralT) = delete;
 
     template<typename CharT, size_t N, size_t... IX>
-    constexpr std::array<CharT, sizeof...(IX)> stringify(const CharT(&c)[N], std::index_sequence<IX...>)
-    { return { c[IX]... }; }
+    constexpr std::array<CharT, sizeof...(IX)> stringify(const CharT(&c)[N], std::index_sequence<IX...>) {
+        return { c[IX]... };
+    }
 
     template<typename CharT, size_t N>
-    constexpr std::array<char, N - 1> stringify(const CharT(&c)[N])
-    { return stringify<CharT>(c, std::make_index_sequence<N - 1>()); }
+    constexpr std::array<char, N - 1> stringify(const CharT(&c)[N]) {
+        return stringify<CharT>(c, std::make_index_sequence<N - 1>());
+    }
 
 
     template<typename CharT, typename T, typename = std::void_t<>>
@@ -774,12 +787,14 @@ namespace detail
     struct CanStringify<CharT, T, std::void_t<decltype(stringify<CharT>(std::declval<T>()))>> : std::true_type {};
 
     template<typename CharT, typename T>
-    constexpr bool canStringify(type<T>)
-    { return CanStringify<CharT, T>::value; }
+    constexpr bool canStringify(type<T>) {
+        return CanStringify<CharT, T>::value;
+    }
 
     template<typename CharT, typename T1, typename... TX>
-    constexpr bool canStringify(type<T1>, type<TX>... tx)
-    { return CanStringify<CharT, T1>::value && canStringify<CharT>(tx...); }
+    constexpr bool canStringify(type<T1>, type<TX>... tx) {
+        return CanStringify<CharT, T1>::value && canStringify<CharT>(tx...);
+    }
 
 
     template<typename CharT, bool StringifyConstexpr>
@@ -788,7 +803,7 @@ namespace detail
         template<typename... TX>
         auto operator()(TX&&... vx) const
         {
-            constexpr int estimatedSize = estimateTypeSeqSize<CharT>(type<std::remove_reference_t<std::remove_cv_t<TX>>>{}...);
+            constexpr size_t estimatedSize = estimateTypeSeqSize<CharT>(type<std::remove_reference_t<std::remove_cv_t<TX>>>{}...);
             basic_stringbuilder<CharT, estimatedSize, std::char_traits<CharT>, std::allocator<uint8_t>> sb;
             sb.append_many(std::forward<TX>(vx)...);
             return sb.str();
@@ -821,7 +836,7 @@ namespace detail
 template<typename... TX>
 constexpr auto make_stringbuilder(TX&&... vx)
 {
-    constexpr int estimatedSize = detail::estimateTypeSeqSize<char>(type<TX>{}...);
+    constexpr size_t estimatedSize = detail::estimateTypeSeqSize<char>(detail::type<TX>{}...);
     stringbuilder<estimatedSize> sb;
     sb.append_many(std::forward<TX>(vx)...);
     return sb;

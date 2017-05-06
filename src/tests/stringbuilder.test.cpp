@@ -131,7 +131,7 @@ struct vec3 {
 };
 
 template<typename SB, typename T>
-struct Appender<SB, vec3<T>> {
+struct sb_appender<SB, vec3<T>> {
     void operator()(SB& sb, const vec3<T>& v) {
         sb << '[' << v.x << ' ' << v.y << ' ' << v.z << ']';
     }
