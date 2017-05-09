@@ -21,7 +21,7 @@ matrix:
       compiler: gcc
 
     - os: linux
-      env: LLVM_VERSION=4.0.0 UNIT_TESTS=OFF CODECOV=OFF
+      env: LLVM_VERSION=4.0.0 UNIT_TESTS=ON CODECOV=OFF
       compiler: clang
 
 install:
