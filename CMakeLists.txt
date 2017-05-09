@@ -20,6 +20,16 @@ add_definitions(-DGTEST_LANG_CXX11=1 -DGTEST_HAS_TR1_TUPLE=0)
 endif()
 add_subdirectory(src/external/googletest EXLUCDE_FROM_ALL)
 add_library(google::test ALIAS gtest_main)
+
+# Enable Code Coverage
+if(CODE_COVERAGE)
+    if(MSVC)
+        message(WARNING "Code Coverage on Visual Studio not supported")
+    elseif(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -coverage -fno-inline -fno-inline-small-functions -fno-default-inline")
+    endif()
+endif()
+
 include_directories(src/include)
 
 add_subdirectory(src/tests)
