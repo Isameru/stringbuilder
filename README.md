@@ -2,7 +2,7 @@
 ===========
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?maxAge=3600)](https://raw.githubusercontent.com/isameru/stringbuilder/master/LICENSE)
-[![Travis](https://travis-ci.org/Isameru/stringbuilder/master.svg?label=Travis)](https://travis-ci.org/Isameru/stringbuilder)
+[![Travis](https://img.shields.io/travis/Isameru/stringbuilder/master.svg?label=Travis)](https://travis-ci.org/Isameru/stringbuilder)
 [![AppVeyor](https://img.shields.io/appveyor/ci/Isameru/stringbuilder/master.svg?label=AppVeyor)](https://ci.appveyor.com/project/Isameru/stringbuilder)
 
 `stringbuilder` is a one-file header-only library providing classes and functions for building strings from smaller parts.
