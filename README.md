@@ -1,8 +1,9 @@
 ![Logo](logo.png) `stringbuilder` Utility Library
 ===========
 
-[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg?maxAge=3600)](https://raw.githubusercontent.com/isameru/stringbuilder/master/LICENSE)
-[![Travis CI Build Status](https://travis-ci.org/Isameru/stringbuilder.svg?branch=master)](https://travis-ci.org/Isameru/stringbuilder)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?maxAge=3600)](https://raw.githubusercontent.com/isameru/stringbuilder/master/LICENSE)
+[![Travis](https://travis-ci.org/Isameru/stringbuilder/master.svg?label=Travis)](https://travis-ci.org/Isameru/stringbuilder)
+[![AppVeyor](https://img.shields.io/appveyor/ci/Isameru/stringbuilder/master.svg?label=AppVeyor)](https://ci.appveyor.com/project/Isameru/stringbuilder)
 
 `stringbuilder` is a one-file header-only library providing classes and functions for building strings from smaller parts.
 This utility is a fast, efficient and convenient alternative to std::stringstream and std::string concatenation.

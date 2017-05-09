@@ -152,6 +152,11 @@ TEST(MakeString, Simple)
     EXPECT_EQ(make_string("There", ' ', "are ", 8, " bits in a ", "single byte", '.'), "There are 8 bits in a single byte.");
 }
 
+TEST(MakeString, SizedStr)
+{
+    EXPECT_EQ(make_string("There", ' ', "are ", 8, " bits in a ", "single ", sized_str<4>(std::string{ "byte" }), '.'), "There are 8 bits in a single byte.");
+}
+
 TEST(MakeString, Constexpr_Simple)
 {
     {   constexpr auto s = make_string('a', "bcd", 'x');
