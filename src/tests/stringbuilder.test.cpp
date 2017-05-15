@@ -167,98 +167,128 @@ TEST(MakeString, Constexpr_Simple)
     }
 }
 
+template<typename MethodT>
+void Benchmark(const char* title, const size_t iterCount, MethodT method) {
+    using Clock = std::chrono::high_resolution_clock;
+    auto time0 = Clock::now();
+    for (int iter = 0; iter < iterCount; ++iter)
+    {
+        if (iter == iterCount / 4) time0 = Clock::now();
+        std::string str = method();
+        volatile size_t size = str.size();
+    }
+    const auto elapsed = Clock::now() - time0;
+    std::cerr << "[  PERFORM ] " << title << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << " ms" << std::endl;
+};
+
 TEST(Perf, IntegerSequence)
 {
     constexpr int iterCount = 3000;
     const int span = 1000;
-    constexpr size_t SufficientMaxSize = 8832;
 
     using Clock = std::chrono::high_resolution_clock;
 
-    {
-        auto time0 = Clock::now();
-        for (int iter = 0; iter < iterCount; ++iter)
-        {
-            if (iter == iterCount / 2) time0 = Clock::now();
-
-            std::string s;
-            for (int i = -span; i <= span; ++i) {
-                s += std::to_string(i) + ' ';
-            }
-            volatile auto ssize = s.size();
+    Benchmark("std::string concatenation", iterCount, [=]() {
+        std::string s;
+        for (int i = -span; i <= span; ++i) {
+            s += std::to_string(i) + ' ';
         }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
-        std::cerr << "[  PERFORM ] std::string concatenation: " << elapsed.count() << " ms" << std::endl;
-    }
+        return s;
+    });
 
-    {
-        auto time0 = Clock::now();
-        for (int iter = 0; iter < iterCount; ++iter)
-        {
-            if (iter == iterCount / 2) time0 = Clock::now();
-
-            std::stringstream ss;
-            for (int i = -span; i <= span; ++i) {
-                ss << i << ' ';
-            }
-            std::string s = ss.str();
-            volatile auto ssize = s.size();
+    Benchmark("std::stringstream", iterCount, [=]() {
+        std::stringstream ss;
+        for (int i = -span; i <= span; ++i) {
+            ss << i << ' ';
         }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
-        std::cerr << "[  PERFORM ] std::stringstream: " << elapsed.count() << " ms" << std::endl;
-    }
+        return ss.str();
+    });
 
-    {
-        auto time0 = Clock::now();
-        for (int iter = 0; iter < iterCount; ++iter)
-        {
-            if (iter == iterCount / 2) time0 = Clock::now();
-
-            inplace_stringbuilder<SufficientMaxSize> sb;
-            for (int i = -span; i <= span; ++i) {
-                sb << i;
-                sb << ' ';
-            }
-            std::string s = sb.str();
-            volatile auto ssize = s.size();
+    Benchmark("static std::stringstream", iterCount, [=]() {
+        static std::stringstream ss;
+        ss.str("");
+        for (int i = -span; i <= span; ++i) {
+            ss << i << ' ';
         }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
-        std::cerr << "[  PERFORM ] inplace_stringbuilder<~>: " << elapsed.count() << " ms" << std::endl;
-    }
+        return ss.str();
+    });
 
-    {
-        auto time0 = Clock::now();
-        for (int iter = 0; iter < iterCount; ++iter)
-        {
-            if (iter == iterCount / 2) time0 = Clock::now();
-
-            stringbuilder<0> sb;
-            for (int i = -span; i < span; ++i) {
-                sb << i;
-                sb << ' ';
-            }
-            std::string s = sb.str();
-            volatile auto ssize = s.size();
+    Benchmark("inplace_stringbuilder<SufficientMaxSize>", iterCount, [=]() {
+        inplace_stringbuilder<8832> sb;
+        for (int i = -span; i <= span; ++i) {
+            sb << i;
+            sb << ' ';
         }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
-        std::cerr << "[  PERFORM ] stringbuilder<0>: " << elapsed.count() << " ms" << std::endl;
-    }
+        return sb.str();
+    });
 
-    {
-        auto time0 = Clock::now();
-        for (int iter = 0; iter < iterCount; ++iter)
-        {
-            if (iter == iterCount / 2) time0 = Clock::now();
-
-            stringbuilder<SufficientMaxSize> sb;
-            for (int i = -span; i < span; ++i) {
-                sb << i;
-                sb << ' ';
-            }
-            std::string s = sb.str();
-            volatile auto ssize = s.size();
+    Benchmark("stringbuilder<>", iterCount, [=]() {
+        stringbuilder<> sb;
+        for (int i = -span; i < span; ++i) {
+            sb << i;
+            sb << ' ';
         }
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - time0);
-        std::cerr << "[  PERFORM ] stringbuilder<~>: " << elapsed.count() << " ms" << std::endl;
-    }
+        return sb.str();
+    });
+
+    Benchmark("stringbuilder<SufficientMaxSize>", iterCount, [=]() {
+        stringbuilder<8832> sb;
+        for (int i = -span; i < span; ++i) {
+            sb << i;
+            sb << ' ';
+        }
+        return sb.str();
+    });
+}
+
+TEST(Perf, Book)
+{
+    constexpr int iterCount = 15;
+    constexpr int wordCount = 400'000;
+    constexpr const char* dictionary[] = { "Evolution", "brings", "human", "beings.", "Human", "beings,", "through", "a", "long", "and", "painful", "process,", "bring", "humanity." };
+    constexpr size_t dictionarySize = sizeof(dictionary) / sizeof(dictionary[0]);
+
+    using Clock = std::chrono::high_resolution_clock;
+
+    Benchmark("std::string concatenation", iterCount, [=]() {
+        std::string s;
+        for (size_t i = 0; i < wordCount; ++i) {
+            s.append(dictionary[i % dictionarySize]);
+            s.append(1, ' ');
+        }
+        return s;
+    });
+
+    Benchmark("stringstream", iterCount, [=]() {
+        std::stringstream ss;
+        for (size_t i = 0; i < wordCount; ++i) {
+            ss << dictionary[i % dictionarySize] << ' ';
+        }
+        return ss.str();
+    });
+
+    Benchmark("static stringstream", iterCount, [=]() {
+        static std::stringstream ss;
+        ss.str("");
+        for (size_t i = 0; i < wordCount; ++i) {
+            ss << dictionary[i % dictionarySize] << ' ';
+        }
+        return ss.str();
+    });
+
+    Benchmark("stringbuilder<>", iterCount, [=]() {
+        stringbuilder<> sb;
+        for (size_t i = 0; i < wordCount; ++i) {
+            sb << dictionary[i % dictionarySize] << ' ';
+        }
+        return sb.str();
+    });
+
+    Benchmark("stringbuilder<64kB>", iterCount, [=]() {
+        stringbuilder<64 * 1024> sb;
+        for (size_t i = 0; i < wordCount; ++i) {
+            sb << dictionary[i % dictionarySize] << ' ';
+        }
+        return sb.str();
+    });
 }
