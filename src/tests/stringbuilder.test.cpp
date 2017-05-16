@@ -171,7 +171,7 @@ template<typename MethodT>
 void Benchmark(const char* title, const size_t iterCount, MethodT method) {
     using Clock = std::chrono::high_resolution_clock;
     auto time0 = Clock::now();
-    for (int iter = 0; iter < iterCount; ++iter)
+    for (size_t iter = 0; iter < iterCount; ++iter)
     {
         if (iter == iterCount / 4) time0 = Clock::now();
         std::string str = method();
@@ -183,35 +183,10 @@ void Benchmark(const char* title, const size_t iterCount, MethodT method) {
 
 TEST(Perf, IntegerSequence)
 {
-    constexpr int iterCount = 3000;
+    constexpr size_t iterCount = 3000;
     const int span = 1000;
 
     using Clock = std::chrono::high_resolution_clock;
-
-    Benchmark("std::string concatenation", iterCount, [=]() {
-        std::string s;
-        for (int i = -span; i <= span; ++i) {
-            s += std::to_string(i) + ' ';
-        }
-        return s;
-    });
-
-    Benchmark("std::stringstream", iterCount, [=]() {
-        std::stringstream ss;
-        for (int i = -span; i <= span; ++i) {
-            ss << i << ' ';
-        }
-        return ss.str();
-    });
-
-    Benchmark("static std::stringstream", iterCount, [=]() {
-        static std::stringstream ss;
-        ss.str("");
-        for (int i = -span; i <= span; ++i) {
-            ss << i << ' ';
-        }
-        return ss.str();
-    });
 
     Benchmark("inplace_stringbuilder<SufficientMaxSize>", iterCount, [=]() {
         inplace_stringbuilder<8832> sb;
@@ -239,16 +214,57 @@ TEST(Perf, IntegerSequence)
         }
         return sb.str();
     });
+
+    Benchmark("std::string concatenation", iterCount, [=]() {
+        std::string s;
+        for (int i = -span; i <= span; ++i) {
+            s += std::to_string(i) + ' ';
+        }
+        return s;
+    });
+
+    Benchmark("std::stringstream", iterCount, [=]() {
+        std::stringstream ss;
+        for (int i = -span; i <= span; ++i) {
+            ss << i << ' ';
+        }
+        return ss.str();
+    });
+
+    Benchmark("static std::stringstream", iterCount, [=]() {
+        static std::stringstream ss;
+        ss.str("");
+        for (int i = -span; i <= span; ++i) {
+            ss << i << ' ';
+        }
+        return ss.str();
+    });
 }
 
 TEST(Perf, Book)
 {
-    constexpr int iterCount = 15;
-    constexpr int wordCount = 400'000;
+    constexpr size_t iterCount = 15;
+    constexpr size_t wordCount = 400'000;
     constexpr const char* dictionary[] = { "Evolution", "brings", "human", "beings.", "Human", "beings,", "through", "a", "long", "and", "painful", "process,", "bring", "humanity." };
     constexpr size_t dictionarySize = sizeof(dictionary) / sizeof(dictionary[0]);
 
     using Clock = std::chrono::high_resolution_clock;
+
+    Benchmark("stringbuilder<>", iterCount, [=]() {
+        stringbuilder<> sb;
+        for (size_t i = 0; i < wordCount; ++i) {
+            sb << dictionary[i % dictionarySize] << ' ';
+        }
+        return sb.str();
+    });
+
+    Benchmark("stringbuilder<64kB>", iterCount, [=]() {
+        stringbuilder<64 * 1024> sb;
+        for (size_t i = 0; i < wordCount; ++i) {
+            sb << dictionary[i % dictionarySize] << ' ';
+        }
+        return sb.str();
+    });
 
     Benchmark("std::string concatenation", iterCount, [=]() {
         std::string s;
@@ -274,21 +290,5 @@ TEST(Perf, Book)
             ss << dictionary[i % dictionarySize] << ' ';
         }
         return ss.str();
-    });
-
-    Benchmark("stringbuilder<>", iterCount, [=]() {
-        stringbuilder<> sb;
-        for (size_t i = 0; i < wordCount; ++i) {
-            sb << dictionary[i % dictionarySize] << ' ';
-        }
-        return sb.str();
-    });
-
-    Benchmark("stringbuilder<64kB>", iterCount, [=]() {
-        stringbuilder<64 * 1024> sb;
-        for (size_t i = 0; i < wordCount; ++i) {
-            sb << dictionary[i % dictionarySize] << ' ';
-        }
-        return sb.str();
     });
 }
