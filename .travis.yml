@@ -17,11 +17,19 @@ cache:
 matrix:
   include:
     - os: linux
-      env: COMPILER=g++-6 UNIT_TESTS=ON CODECOV=ON
+      env: COMPILER=g++-6 BUILD_TYPE=Debug UNIT_TESTS=ON PERF_TESTS=OFF CODECOV=ON
       compiler: gcc
 
     - os: linux
-      env: LLVM_VERSION=4.0.0 UNIT_TESTS=ON CODECOV=OFF
+      env: COMPILER=g++-6 BUILD_TYPE=Release UNIT_TESTS=ON PERF_TESTS=ON CODECOV=OFF
+      compiler: gcc
+
+    - os: linux
+      env: LLVM_VERSION=4.0.0 BUILD_TYPE=Debug UNIT_TESTS=ON PERF_TESTS=OFF CODECOV=OFF
+      compiler: clang
+
+    - os: linux
+      env: LLVM_VERSION=4.0.0 BUILD_TYPE=Release UNIT_TESTS=ON PERF_TESTS=ON CODECOV=OFF
       compiler: clang
 
 install:
@@ -81,7 +89,7 @@ before_script:
   # Go back to the root of the project and setup the build directory
   ############################################################################
   - cd ${TRAVIS_BUILD_DIR}
-  - mkdir build && cd build && cmake .. -DCODE_COVERAGE={CODECOV}
+  - mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE={BUILD_TYPE} -DCODE_COVERAGE={CODECOV} ..
 
 script:
   - cmake --build .
@@ -89,6 +97,10 @@ script:
     if [[ "${UNIT_TESTS}" == "ON" ]]; then
       src/tests/stringbuilder.test
     fi
+    if [[ "${PERF_TESTS}" == "ON" ]]; then
+      src/tests/stringbuilder.benchmark
+    fi
+
 after_success:
   - |
     if [[ "${CODECOV}" == "ON" ]]; then

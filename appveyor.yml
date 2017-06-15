@@ -36,6 +36,9 @@ build:
 
 test_script:
   - '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.test.exe --gtest_output=xml:stringbuilder.test.xml'
+  - if [[ "%CONFIGURATION%" == "Release" ]]; then
+      '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.benchmark.exe
+    fi
 
 on_finish:
   - ps: (new-object net.webclient).UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path .\stringbuilder.test.xml))
