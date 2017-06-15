@@ -109,9 +109,9 @@ TEST(StringBuilder, Reserve)
 TEST(StringBuilder, AppendCharMulti)
 {
     auto sb = stringbuilder<5>{};
-    sb.append('.', 10);
+    sb.append(10, '.');
     auto ipsb = inplace_stringbuilder<10>{};
-    ipsb.append('.', 10);
+    ipsb.append(10, '.');
     EXPECT_EQ(std::to_string(sb), std::to_string(ipsb));
 }
 

@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 project(stringbuilder C CXX)
 
 set(VERSION_MAJOR 0)
@@ -18,8 +20,12 @@ set(gtest_force_shared_crt ON CACHE BOOL "Use shared (DLL) run-time lib even whe
 if(MSVC)
 add_definitions(-DGTEST_LANG_CXX11=1 -DGTEST_HAS_TR1_TUPLE=0)
 endif()
+set(BUILD_GTEST on)
+set(BUILD_GMOCK off)
 add_subdirectory(src/external/googletest EXLUCDE_FROM_ALL)
 add_library(google::test ALIAS gtest_main)
+
+set_target_properties(gtest gtest_main PROPERTIES FOLDER "Google Test")
 
 # Enable Code Coverage
 if(CODE_COVERAGE)
