@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include <stringbuilder.h>
+#include <strstream>
 #include <iostream>
 #include <chrono>
 
@@ -104,6 +105,14 @@ void benchmarkIntegerSequence()
         }
         return ss.str();
     });
+
+    Benchmark("strstream", iterCount, [=]() {
+        std::strstream ss;
+        for (int i = -span; i <= span; ++i) {
+            ss << i << ' ';
+        }
+        return ss.str();
+    });
 }
 
 void benchmarkBook()
@@ -180,6 +189,14 @@ void benchmarkBook()
         }
         return ss.str();
     });
+
+    Benchmark("strstream", iterCount, [=]() {
+        std::strstream ss;
+        for (size_t i = 0; i < wordCount; ++i) {
+            ss << dictionary[i % dictionarySize] << ' ';
+        }
+        return ss.str();
+    });
 }
 
 void benchmarkQuote()
@@ -218,6 +235,12 @@ void benchmarkQuote()
     Benchmark("static stringstream", iterCount, [=]() {
         static std::stringstream ss;
         ss.str("");
+        ss << "There" << ' ' << "are" << ' ' << "only" << ' ' << 10 << ' ' << "people" << ' ' << "in" << ' ' << "the" << ' ' << "world" << ':' << ' ' << "those" << ' ' << "who" << ' ' << "know" << ' ' << "binary" << ' ' << "and" << ' ' << "those" << ' ' << "who" << ' ' << "don't" << '.';
+        return ss.str();
+    });
+
+    Benchmark("strstream", iterCount, [=]() {
+        std::strstream ss;
         ss << "There" << ' ' << "are" << ' ' << "only" << ' ' << 10 << ' ' << "people" << ' ' << "in" << ' ' << "the" << ' ' << "world" << ':' << ' ' << "those" << ' ' << "who" << ' ' << "know" << ' ' << "binary" << ' ' << "and" << ' ' << "those" << ' ' << "who" << ' ' << "don't" << '.';
         return ss.str();
     });
