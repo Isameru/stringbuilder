@@ -124,7 +124,7 @@ public:
         return *this;
     }
 
-    basic_inplace_stringbuilder& append(char_type ch, size_type count) noexcept
+    basic_inplace_stringbuilder& append(size_type count, char_type ch) noexcept
     {
         assert(ch != '\0');
         assert(consumed + count <= MaxSize);
@@ -139,15 +139,7 @@ public:
     template<size_type StrSizeWith0>
     basic_inplace_stringbuilder& append(const char_type(&str)[StrSizeWith0]) noexcept
     {
-        constexpr size_t strSize = StrSizeWith0 - 1;
-        assert(consumed + StrSizeWith0 <= MaxSize + 1);
-        if (Forward) {
-            Traits::copy(data_.data() + consumed, &str[0], strSize);
-        } else {
-            Traits::copy(data_.data() + MaxSize - strSize - consumed, &str[0], strSize);
-        }
-        consumed += strSize;
-        return *this;
+        return append(str, StrSizeWith0 - 1);
     }
 
     template<size_type N>
@@ -419,7 +411,7 @@ public:
         return *this;
     }
 
-    basic_stringbuilder& append(char_type ch, size_type count)
+    basic_stringbuilder& append(size_type count, char_type ch)
     {
         assert(ch != '\0');
         for (auto left = count; left > 0;) {
@@ -435,15 +427,7 @@ public:
     template<size_type StrSizeWith0>
     basic_stringbuilder& append(const char_type(&str)[StrSizeWith0])
     {
-        constexpr size_type StrSize = StrSizeWith0 - 1;
-        assert(str[StrSize] == '\0');
-        for (auto left = StrSize; left > 0;)
-        {
-            const auto claimed = claim(left, 1);
-            Traits::copy(claimed.first, &str[StrSize - left], claimed.second);
-            left -= claimed.second;
-        }
-        return *this;
+        return append(str, StrSizeWith0 - 1);
     }
 
     template<size_type N>
@@ -539,7 +523,7 @@ public:
         size_type consumed = 0;
         for (const Chunk* chunk = headChunk(); chunk != nullptr; chunk = chunk->next)
         {
-            Traits::copy(&str[consumed], chunk->data,  chunk->consumed);
+            Traits::copy(&str[consumed], chunk->data, chunk->consumed);
             consumed += chunk->consumed;
         }
         return str;

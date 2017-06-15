@@ -30,7 +30,10 @@
 
 # Visual Studio
 .vs
-x64
 
 # CMake
 CMakeSettings.json
+
+# Build
+x64
+build
