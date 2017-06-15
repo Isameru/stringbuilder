@@ -46,8 +46,8 @@ void benchmarkIntegerSequence()
     constexpr size_t iterCount = 3000;
     const int span = 1000;
 
-    Benchmark("inplace_stringbuilder<SufficientMaxSize>", iterCount, [=]() {
-        inplace_stringbuilder<8832> sb;
+    Benchmark("inplace_stringbuilder<big>", iterCount, [=]() {
+        inplace_stringbuilder<8788> sb;
         for (int i = -span; i <= span; ++i) {
             sb << i;
             sb << ' ';
@@ -64,8 +64,8 @@ void benchmarkIntegerSequence()
         return sb.str();
     });
 
-    Benchmark("stringbuilder<SufficientMaxSize>", iterCount, [=]() {
-        stringbuilder<8832> sb;
+    Benchmark("stringbuilder<big>", iterCount, [=]() {
+        stringbuilder<8788> sb;
         for (int i = -span; i < span; ++i) {
             sb << i;
             sb << ' ';
@@ -106,13 +106,18 @@ void benchmarkIntegerSequence()
         return ss.str();
     });
 
-    Benchmark("strstream", iterCount, [=]() {
-        std::strstream ss;
-        for (int i = -span; i <= span; ++i) {
-            ss << i << ' ';
-        }
-        return ss.str();
-    });
+    {
+        constexpr int bufSize = 8788 + 1;
+        char buf[bufSize];
+        Benchmark("strstream", iterCount, [=, &buf]() {
+            std::strstream ss{buf, bufSize};
+            for (int i = -span; i <= span; ++i) {
+                ss << i << ' ';
+            }
+            ss << std::ends;
+            return ss.str();
+        });
+    }
 }
 
 void benchmarkBook()
@@ -190,13 +195,18 @@ void benchmarkBook()
         return ss.str();
     });
 
-    Benchmark("strstream", iterCount, [=]() {
-        std::strstream ss;
-        for (size_t i = 0; i < wordCount; ++i) {
-            ss << dictionary[i % dictionarySize] << ' ';
-        }
-        return ss.str();
-    });
+    {
+        constexpr int bufSize = 2771432 + 1;
+        auto buf = std::make_unique<char[]>(bufSize);
+        Benchmark("strstream", iterCount, [=, &buf]() {
+            std::strstream ss{buf.get(), bufSize};
+            for (size_t i = 0; i < wordCount; ++i) {
+                ss << dictionary[i % dictionarySize] << ' ';
+            }
+            ss << std::ends;
+            return ss.str();
+        });
+    }
 }
 
 void benchmarkQuote()
@@ -239,9 +249,10 @@ void benchmarkQuote()
         return ss.str();
     });
 
-    Benchmark("strstream", iterCount, [=]() {
-        std::strstream ss;
-        ss << "There" << ' ' << "are" << ' ' << "only" << ' ' << 10 << ' ' << "people" << ' ' << "in" << ' ' << "the" << ' ' << "world" << ':' << ' ' << "those" << ' ' << "who" << ' ' << "know" << ' ' << "binary" << ' ' << "and" << ' ' << "those" << ' ' << "who" << ' ' << "don't" << '.';
+    char buf[81 + 1];
+    Benchmark("strstream", iterCount, [=, &buf]() {
+        std::strstream ss{buf, sizeof(buf)/sizeof(buf[0])};
+        ss << "There" << ' ' << "are" << ' ' << "only" << ' ' << 10 << ' ' << "people" << ' ' << "in" << ' ' << "the" << ' ' << "world" << ':' << ' ' << "those" << ' ' << "who" << ' ' << "know" << ' ' << "binary" << ' ' << "and" << ' ' << "those" << ' ' << "who" << ' ' << "don't" << '.' << std::ends;
         return ss.str();
     });
 }
