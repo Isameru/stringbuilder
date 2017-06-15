@@ -36,7 +36,7 @@ build:
 
 test_script:
   - '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.test.exe --gtest_output=xml:stringbuilder.test.xml'
-  - if("%CONFIGURATION%" -eq "Release") {
+  - ps: if ("%CONFIGURATION%" -eq "Release") {
       '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.benchmark.exe'
     }
 

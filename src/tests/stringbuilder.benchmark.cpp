@@ -72,7 +72,7 @@ void benchmarkIntegerSequence()
         return sb.str();
     });
 
-    Benchmark("string.append(x).append(y)", iterCount, [=]() {
+    Benchmark("string.append(a).append(b)", iterCount, [=]() {
         std::string s;
         for (int i = -span; i <= span; ++i) {
             s.append(std::to_string(i)).append(1, ' ');
@@ -80,7 +80,7 @@ void benchmarkIntegerSequence()
         return s;
     });
 
-    Benchmark("string.append(x+y)", iterCount, [=]() {
+    Benchmark("string.append(a+b)", iterCount, [=]() {
         std::string s;
         for (int i = -span; i <= span; ++i) {
             s.append(std::to_string(i) + ' ');
@@ -147,7 +147,7 @@ void benchmarkBook()
         return sb.str();
     });
 
-    Benchmark("string.append(x).append(y)", iterCount, [=]() {
+    Benchmark("string.append(a).append(b)", iterCount, [=]() {
         std::string s;
         for (size_t i = 0; i < wordCount; ++i) {
             s.append(dictionary[i % dictionarySize]);
@@ -156,7 +156,7 @@ void benchmarkBook()
         return s;
     });
 
-    Benchmark("string.append(x+y)", iterCount, [=]() {
+    Benchmark("string.append(a+b)", iterCount, [=]() {
         std::string s;
         for (size_t i = 0; i < wordCount; ++i) {
             s.append(std::string(dictionary[i % dictionarySize]) + ' ');
@@ -186,13 +186,22 @@ void benchmarkQuote()
 {
     std::cout << "Scenario: Quote" << std::endl;
 
-    constexpr size_t iterCount = 100'000;
+    constexpr size_t iterCount = 200'000;
+
+    Benchmark("one string", iterCount, [=]() {
+        return std::string("There are only 10 people in the world: those who know binary and those who don't.");
+    });
+
+    Benchmark("constexpr make_string", iterCount, [=]() {
+        constexpr auto constexpr_quote = make_string("There", ' ', "are", ' ', "only", ' ', "10", ' ', "people", ' ', "in", ' ', "the", ' ', "world", ':', ' ', "those", ' ', "who", ' ', "know", ' ', "binary", ' ', "and", ' ', "those", ' ', "who", ' ', "don't", '.');
+        return constexpr_quote.str();
+    });
 
     Benchmark("make_string", iterCount, [=]() {
         return make_string("There", ' ', "are", ' ', "only", ' ', 10, ' ', "people", ' ', "in", ' ', "the", ' ', "world", ':', ' ', "those", ' ', "who", ' ', "know", ' ', "binary", ' ', "and", ' ', "those", ' ', "who", ' ', "don't", '.');
     });
 
-    Benchmark("string+", iterCount, [=]() {
+    Benchmark("string+string", iterCount, [=]() {
         return std::string("There") + ' ' + "are" + ' ' + "only" + ' ' + std::to_string(10) + ' ' + "people" + ' ' + "in" + ' ' + "the" + ' ' + "world" + ':' + ' ' + "those" + ' ' + "who" + ' ' + "know" + ' ' + "binary" + ' ' + "and" + ' ' + "those" + ' ' + "who" + ' ' + "don't" + '.';
     });
 

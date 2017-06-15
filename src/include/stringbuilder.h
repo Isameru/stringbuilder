@@ -682,7 +682,9 @@ public:
         c_str_{ arr_[IX]... }
     { }
 
+    constexpr size_t size() const { return N - 1; }
     constexpr const CharT* c_str() const { return c_str_; }
+    constexpr auto str() const { return std::string(c_str_, size()); }
 };
 
 
@@ -748,8 +750,9 @@ namespace detail
 
 
     template<typename CharT>
-    constexpr std::array<char, 1> stringify(CharT c)
-    { return { c }; }
+    constexpr std::array<char, 1> stringify(CharT c) {
+        return { c };
+    }
 
     template<typename CharT, typename IntegralT>
     constexpr std::enable_if_t<std::is_integral<IntegralT>::value && !std::is_same<CharT, IntegralT>::value> stringify(IntegralT) = delete;
