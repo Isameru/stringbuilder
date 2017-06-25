@@ -36,6 +36,10 @@ if(CODE_COVERAGE)
     endif()
 endif()
 
+if(PERF)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fno-exceptions -fno-rtti")
+endif()
+
 include_directories(src/include)
 
 add_subdirectory(src/tests)
