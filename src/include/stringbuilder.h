@@ -30,7 +30,7 @@
 #include <numeric>
 #include <utility>
 #include <type_traits>
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__) && !defined(__clang__) && __cplusplus <= 201402L
 #include <experimental/string_view>
 namespace std {
     template<typename... AnyT> using basic_string_view = experimental::basic_string_view<AnyT...>;
