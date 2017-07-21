@@ -136,10 +136,10 @@ public:
         return *this;
     }
 
-    template<size_type StrSizeWith0>
-    basic_inplace_stringbuilder& append(const char_type(&str)[StrSizeWith0]) noexcept
+    template<size_type N>
+    basic_inplace_stringbuilder& append(const char_type(&str)[N]) noexcept
     {
-        return append(str, StrSizeWith0 - 1);
+        return append(str, N-1);
     }
 
     template<size_type N>
@@ -168,6 +168,17 @@ public:
     basic_inplace_stringbuilder& append_c_str(const char_type* str) noexcept
     {
         return append(str, Traits::length(str));
+    }
+
+    basic_inplace_stringbuilder& append_c_str_progressive(const char_type* str) noexcept
+    {
+        assert(Forward);
+        while (*str != 0)
+        {
+            assert(consumed <= MaxSize);
+            data_[consumed++] = *(str++);
+        }
+        return *this;
     }
 
     template<typename OtherTraits, typename OtherAlloc>

@@ -200,7 +200,7 @@ void benchmarkBook()
     constexpr const char* dictionary[] = { "Evolution", "brings", "human", "beings.", "Human", "beings,", "through", "a", "long", "and", "painful", "process,", "bring", "humanity." };
     constexpr size_t dictionarySize = sizeof(dictionary) / sizeof(dictionary[0]);
 
-    BenchmarkMean("stringbuilder<>", iterCount, 1, [=]() {
+    BenchmarkMean("stringbuilder<> << *", iterCount, 1, [=]() {
         stringbuilder<> sb;
         for (size_t i = 0; i < wordCount; ++i) {
             sb << dictionary[i % dictionarySize] << ' ';
@@ -208,7 +208,15 @@ void benchmarkBook()
         return sb.str();
     });
 
-    BenchmarkMean("stringbuilder<> with reserve", iterCount, 1, [=]() {
+    BenchmarkMean("stringbuilder<> << [N]", iterCount, 1, [=]() {
+        stringbuilder<> sb;
+        for (size_t i = 0; i < wordCount; i += dictionarySize) {
+            sb << "Evolution" << ' ' << "brings" << ' ' << "human" << ' ' << "beings." << ' ' << "Human" << ' ' << "beings," << ' ' << "through" << ' ' << "a" << ' ' << "long" << ' ' << "and" << ' ' << "painful" << ' ' << "process," << ' ' << "bring" << ' ' << "humanity.";
+        }
+        return sb.str();
+    });
+
+    BenchmarkMean("stringbuilder<> with reserve << *", iterCount, 1, [=]() {
         stringbuilder<> sb;
         sb.reserve(2771432);
         for (size_t i = 0; i < wordCount; ++i) {
@@ -217,7 +225,16 @@ void benchmarkBook()
         return sb.str();
     });
 
-    BenchmarkMean("stringbuilder<4kB>", iterCount, 1, [=]() {
+    BenchmarkMean("stringbuilder<> with reserve << [N]", iterCount, 1, [=]() {
+        stringbuilder<> sb;
+        sb.reserve(2771432);
+        for (size_t i = 0; i < wordCount; i += dictionarySize) {
+            sb << "Evolution" << ' ' << "brings" << ' ' << "human" << ' ' << "beings." << ' ' << "Human" << ' ' << "beings," << ' ' << "through" << ' ' << "a" << ' ' << "long" << ' ' << "and" << ' ' << "painful" << ' ' << "process," << ' ' << "bring" << ' ' << "humanity.";
+        }
+        return sb.str();
+    });
+
+    BenchmarkMean("stringbuilder<4kB> << *", iterCount, 1, [=]() {
         stringbuilder<4 * 1024> sb;
         for (size_t i = 0; i < wordCount; ++i) {
             sb << dictionary[i % dictionarySize] << ' ';
@@ -225,7 +242,15 @@ void benchmarkBook()
         return sb.str();
     });
 
-    BenchmarkMean("stringbuilder<64kB>", iterCount, 1, [=]() {
+    BenchmarkMean("stringbuilder<4kB> << [N]", iterCount, 1, [=]() {
+        stringbuilder<4 * 1024> sb;
+        for (size_t i = 0; i < wordCount; i += dictionarySize) {
+            sb << "Evolution" << ' ' << "brings" << ' ' << "human" << ' ' << "beings." << ' ' << "Human" << ' ' << "beings," << ' ' << "through" << ' ' << "a" << ' ' << "long" << ' ' << "and" << ' ' << "painful" << ' ' << "process," << ' ' << "bring" << ' ' << "humanity.";
+        }
+        return sb.str();
+    });
+
+    BenchmarkMean("stringbuilder<64kB> << *", iterCount, 1, [=]() {
         stringbuilder<64 * 1024> sb;
         for (size_t i = 0; i < wordCount; ++i) {
             sb << dictionary[i % dictionarySize] << ' ';
@@ -233,7 +258,15 @@ void benchmarkBook()
         return sb.str();
     });
 
-    BenchmarkMean("stringbuilder<512kB>", iterCount, 1, [=]() {
+    BenchmarkMean("stringbuilder<64kB> << [N]", iterCount, 1, [=]() {
+        stringbuilder<64 * 1024> sb;
+        for (size_t i = 0; i < wordCount; i += dictionarySize) {
+            sb << "Evolution" << ' ' << "brings" << ' ' << "human" << ' ' << "beings." << ' ' << "Human" << ' ' << "beings," << ' ' << "through" << ' ' << "a" << ' ' << "long" << ' ' << "and" << ' ' << "painful" << ' ' << "process," << ' ' << "bring" << ' ' << "humanity.";
+        }
+        return sb.str();
+    });
+
+    BenchmarkMean("stringbuilder<512kB> << *", iterCount, 1, [=]() {
         stringbuilder<512 * 1024> sb;
         for (size_t i = 0; i < wordCount; ++i) {
             sb << dictionary[i % dictionarySize] << ' ';
@@ -241,7 +274,15 @@ void benchmarkBook()
         return sb.str();
     });
 
-    BenchmarkMean("string.append(a).append(b)", iterCount, 1, [=]() {
+    BenchmarkMean("stringbuilder<512kB> << [N]", iterCount, 1, [=]() {
+        stringbuilder<512 * 1024> sb;
+        for (size_t i = 0; i < wordCount; i += dictionarySize) {
+            sb << "Evolution" << ' ' << "brings" << ' ' << "human" << ' ' << "beings." << ' ' << "Human" << ' ' << "beings," << ' ' << "through" << ' ' << "a" << ' ' << "long" << ' ' << "and" << ' ' << "painful" << ' ' << "process," << ' ' << "bring" << ' ' << "humanity.";
+        }
+        return sb.str();
+    });
+
+    BenchmarkMean("string.append(*).append(char)", iterCount, 1, [=]() {
         std::string s;
         for (size_t i = 0; i < wordCount; ++i) {
             s.append(dictionary[i % dictionarySize]);
@@ -250,7 +291,7 @@ void benchmarkBook()
         return s;
     });
 
-    BenchmarkMean("string.append(a+b)", iterCount, 1, [=]() {
+    BenchmarkMean("string.append(str+char)", iterCount, 1, [=]() {
         std::string s;
         for (size_t i = 0; i < wordCount; ++i) {
             s.append(std::string(dictionary[i % dictionarySize]) + ' ');
@@ -258,7 +299,7 @@ void benchmarkBook()
         return s;
     });
 
-    BenchmarkMean("stringstream", iterCount, 1, [=]() {
+    BenchmarkMean("stringstream << *", iterCount, 1, [=]() {
         std::stringstream ss;
         for (size_t i = 0; i < wordCount; ++i) {
             ss << dictionary[i % dictionarySize] << ' ';
@@ -266,7 +307,15 @@ void benchmarkBook()
         return ss.str();
     });
 
-    BenchmarkMean("static stringstream", iterCount, 1, [=]() {
+    BenchmarkMean("stringstream << [N]", iterCount, 1, [=]() {
+        std::stringstream ss;
+        for (size_t i = 0; i < wordCount; i += dictionarySize) {
+            ss << "Evolution" << ' ' << "brings" << ' ' << "human" << ' ' << "beings." << ' ' << "Human" << ' ' << "beings," << ' ' << "through" << ' ' << "a" << ' ' << "long" << ' ' << "and" << ' ' << "painful" << ' ' << "process," << ' ' << "bring" << ' ' << "humanity.";
+        }
+        return ss.str();
+    });
+
+    BenchmarkMean("static stringstream << *", iterCount, 1, [=]() {
         static std::stringstream ss;
         ss.str("");
         for (size_t i = 0; i < wordCount; ++i) {
@@ -275,10 +324,19 @@ void benchmarkBook()
         return ss.str();
     });
 
+    BenchmarkMean("static stringstream << [N]", iterCount, 1, [=]() {
+        static std::stringstream ss;
+        ss.str("");
+        for (size_t i = 0; i < wordCount; i += dictionarySize) {
+            ss << "Evolution" << ' ' << "brings" << ' ' << "human" << ' ' << "beings." << ' ' << "Human" << ' ' << "beings," << ' ' << "through" << ' ' << "a" << ' ' << "long" << ' ' << "and" << ' ' << "painful" << ' ' << "process," << ' ' << "bring" << ' ' << "humanity.";
+        }
+        return ss.str();
+    });
+
     {
         constexpr int bufSize = 2771432 + 1;
         auto buf = std::make_unique<char[]>(bufSize);
-        BenchmarkMean("strstream", iterCount, 1, [=, &buf]() {
+        BenchmarkMean("strstream << *", iterCount, 1, [=, &buf]() {
             std::strstream ss{buf.get(), bufSize};
             for (size_t i = 0; i < wordCount; ++i) {
                 ss << dictionary[i % dictionarySize] << ' ';
@@ -787,6 +845,101 @@ void benchmarkAppend()
 #endif
 }
 
+template<typename Method, size_t I>
+void foreach_integral_constant(std::integer_sequence<size_t, I>, Method method)
+{
+    method(std::integral_constant<size_t, I>{});
+}
+
+template<typename Method, size_t I0, size_t... IX>
+void foreach_integral_constant(std::integer_sequence<size_t, I0, IX...>, Method method)
+{
+    method(std::integral_constant<size_t, I0>{});
+    foreach_integral_constant(std::integer_sequence<size_t, IX...>{}, method);
+}
+
+void benchmarkProgressiveAppend()
+{
+    std::cout << "Scenario: ProgressiveAppend (words)" << std::endl;
+    const std::array<const char* const, 33> words{ "There", " ", "are", " ", "only", " ", "10", " ", "people", " ", "in", " ", "the", " ", "world", ":", " ", "those", " ", "who", " ", "know", " ", "binary", " ", "and", " ", "those", " ", "who", " ", "don't", ". " };
+
+    foreach_integral_constant(
+        std::integer_sequence<size_t, 64, 512, 4098, 32 * 1024, 128 * 1024, 512 * 1024>{},
+        [=](auto inPlaceSizeIC) {
+            constexpr auto inPlaceSize = inPlaceSizeIC.value;
+
+            BenchmarkMean(make_string("inplace_stringbuilder<", inPlaceSize, ">.append_c_str(*)"), 100, 10, [=]() {
+                constexpr auto inPlaceSize = inPlaceSizeIC.value;
+                inplace_stringbuilder<inPlaceSize> sb;
+
+                for (size_t i = 0; sb.length() + 8 < inPlaceSize; ++i)
+                {
+                    sb.append_c_str(words[i % words.size()]);
+                }
+
+                return sb.str();
+            });
+
+            BenchmarkMean(make_string("inplace_stringbuilder<", inPlaceSize, ">.append_c_str_progressive(*)"), 100, 10, [=]() {
+                constexpr auto inPlaceSize = inPlaceSizeIC.value;
+                inplace_stringbuilder<inPlaceSize> sb;
+
+                for (size_t i = 0; sb.length() + 8 < inPlaceSize; ++i)
+                {
+                    sb.append_c_str_progressive(words[i % words.size()]);
+                }
+
+                return sb.str();
+            });
+        }
+    );
+
+    std::cout << "Scenario: ProgressiveAppend (sentences)" << std::endl;
+
+    foreach_integral_constant(
+        std::integer_sequence<size_t, 512, 2048, 2*4098, 64*1024, 128*1024, 256*1024, 512*1024>{},
+        [=](auto inPlaceSizeIC) {
+            constexpr auto inPlaceSize = inPlaceSizeIC.value;
+
+            BenchmarkMean(make_string("inplace_stringbuilder<", inPlaceSize, ">.append_c_str(*)"), 100, 10, [=]() {
+                constexpr auto inPlaceSize = inPlaceSizeIC.value;
+                inplace_stringbuilder<inPlaceSize> sb;
+
+                for (size_t i = 0; sb.length() + 81 < inPlaceSize; ++i)
+                {
+                    sb.append_c_str(g_joke);
+                }
+
+                return sb.str();
+            });
+
+            BenchmarkMean(make_string("inplace_stringbuilder<", inPlaceSize, ">.append_c_str(*,81)"), 100, 10, [=]() {
+                constexpr auto inPlaceSize = inPlaceSizeIC.value;
+                inplace_stringbuilder<inPlaceSize> sb;
+
+                for (size_t i = 0; sb.length() + 81 < inPlaceSize; ++i)
+                {
+                    sb.append_c_str(g_joke, 81);
+                }
+
+                return sb.str();
+            });
+
+            BenchmarkMean(make_string("inplace_stringbuilder<", inPlaceSize, ">.append_c_str_progressive(*)"), 100, 10, [=]() {
+                constexpr auto inPlaceSize = inPlaceSizeIC.value;
+                inplace_stringbuilder<inPlaceSize> sb;
+
+                for (size_t i = 0; sb.length() + 81 < inPlaceSize; ++i)
+                {
+                    sb.append_c_str_progressive(g_joke);
+                }
+
+                return sb.str();
+            });
+        }
+    );
+}
+
 //#include <iomanip>
 //template<typename T>
 //void dumpHex(const T& v)
@@ -810,6 +963,7 @@ int main(const int argc, const char* const argv[])
         benchmarkBook();
         benchmarkQuote();
         benchmarkAppend();
+        benchmarkProgressiveAppend();
 
         if (vsize == 0 || vcstr == nullptr) std::cout << "vsize == 0 || vcstr == nullptr" << std::endl;
     } while (false);
