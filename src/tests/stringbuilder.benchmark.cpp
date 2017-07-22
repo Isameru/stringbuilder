@@ -855,7 +855,7 @@ template<typename Method, size_t I0, size_t... IX>
 void foreach_integral_constant(std::integer_sequence<size_t, I0, IX...>, Method method)
 {
     method(std::integral_constant<size_t, I0>{});
-    foreach_integral_constant(std::integer_sequence<size_t, IX...>{}, method);
+    foreach_integral_constant<Method, IX...>(std::integer_sequence<size_t, IX...>{}, method);
 }
 
 void benchmarkProgressiveAppend()
