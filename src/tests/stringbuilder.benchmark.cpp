@@ -646,7 +646,7 @@ struct SbC
     std::unique_ptr<Chunk> chunk;
 
     SbC(size_t maxSize) :
-        chunk{reinterpret_cast<Chunk*>(new uint8_t[sizeof(Chunk::consumed) +  maxSize])}
+        chunk{reinterpret_cast<Chunk*>(new uint8_t[sizeof(chunk->consumed) +  maxSize])}
     {
         chunk->consumed = 0;
     }
@@ -677,7 +677,7 @@ struct SbCR
     std::unique_ptr<Chunk> chunk;
 
     SbCR(size_t maxSize) :
-        chunk{reinterpret_cast<Chunk*>(new uint8_t[sizeof(Chunk) - sizeof(Chunk::data) +  maxSize])}
+        chunk{reinterpret_cast<Chunk*>(new uint8_t[sizeof(Chunk) - sizeof(chunk->data) +  maxSize])}
     {
         chunk->consumed = 0;
         chunk->reserved = maxSize;
@@ -845,17 +845,35 @@ void benchmarkAppend()
 #endif
 }
 
-template<typename Method, size_t I>
-void foreach_integral_constant(std::integer_sequence<size_t, I>, Method method)
+namespace detail
 {
-    method(std::integral_constant<size_t, I>{});
+    template<typename Method, size_t... IX>
+    struct foreach_integral_constant_helper;
+
+    template<typename Method, size_t I>
+    struct foreach_integral_constant_helper<Method, I>
+    {
+        void operator()(Method method)
+        {
+            method(std::integral_constant<size_t, I>{});
+        }
+    };
+
+    template<typename Method, size_t I0, size_t... IX>
+    struct foreach_integral_constant_helper<Method, I0, IX...>
+    {
+        void operator()(Method method)
+        {
+            method(std::integral_constant<size_t, I0>{});
+            foreach_integral_constant_helper<Method, IX...>{}(method);
+        }
+    };
 }
 
-template<typename Method, size_t I0, size_t... IX>
-void foreach_integral_constant(std::integer_sequence<size_t, I0, IX...>, Method method)
+template<typename Method, size_t... IX>
+void foreach_integral_constant(std::integer_sequence<size_t, IX...>, Method method)
 {
-    method(std::integral_constant<size_t, I0>{});
-    foreach_integral_constant<Method, IX...>(std::integer_sequence<size_t, IX...>{}, method);
+    detail::foreach_integral_constant_helper<Method, IX...>{}(method);
 }
 
 void benchmarkProgressiveAppend()
