@@ -30,12 +30,14 @@
 #include <numeric>
 #include <utility>
 #include <type_traits>
-#if defined(__GNUC__) && __cplusplus <= 201500L
+#ifdef __GNUC__
 #include <experimental/string_view>
+#if defined(__cpp_lib_experimental_string_view) && __cpp_lib_experimental_string_view >= 201411
 namespace std {
     template<typename... AnyT> using basic_string_view = experimental::basic_string_view<AnyT...>;
     template<typename... AnyT> using void_t = __void_t<AnyT...>;
 }
+#endif
 #else
 #include <string_view>
 #endif
