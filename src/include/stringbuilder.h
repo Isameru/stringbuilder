@@ -22,13 +22,14 @@
 
 #pragma once
 
-#include <assert.h>
+#include <new>
 #include <array>
 #include <deque>
 #include <sstream>
 #include <memory>
 #include <numeric>
 #include <utility>
+#include <assert.h>
 #include <type_traits>
 #ifdef __GNUC__
 #include <experimental/string_view>
@@ -41,6 +42,29 @@ namespace std {
 #else
 #include <string_view>
 #endif
+
+#ifdef __GNUC__
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+#define noinline        __attribute__((noinline))
+#else
+#define likely(x)       (x)
+#define unlikely(x)     (x)
+#define noinline        __declspec(noinline)
+#endif
+
+#ifdef WIN32
+#include <intrin.h>
+#endif
+
+void prefetchWrite(const void* p)
+{
+#ifdef __GNUC__
+    __builtin_prefetch(p, 1);
+#else
+    _mm_prefetch((const char*)p, _MM_HINT_T0);
+#endif
+}
 
 
 template<size_t ExpectedSize, typename StringT>
@@ -302,34 +326,37 @@ namespace detail
     };
 
 
+    template<typename CharT>
     struct Chunk;
 
+    template<typename CharT>
     struct ChunkHeader
     {
-        Chunk* next;
+        Chunk<CharT>* next;
         size_t consumed;
         size_t reserved;
     };
 
-    struct Chunk : public ChunkHeader
+    template<typename CharT>
+    struct Chunk : public ChunkHeader<CharT>
     {
-        char data[1]; // In practice there are ChunkHeader::reserved of characters in this array.
+        CharT data[1]; // In practice there are ChunkHeader::reserved of characters in this array.
 
-        Chunk(size_t reserve) : ChunkHeader{nullptr, size_t{0}, reserve} { }
+        Chunk(size_t reserve) : ChunkHeader<CharT>{nullptr, size_t{0}, reserve} { }
     };
 
-    template<int DataLength>
-    struct ChunkInPlace : public ChunkHeader
+    template<typename CharT, int DataLength>
+    struct ChunkInPlace : public ChunkHeader<CharT>
     {
-        std::array<char, DataLength> data;
+        std::array<CharT, DataLength> data;
 
-        ChunkInPlace() : ChunkHeader{nullptr, 0, DataLength} { }
+        ChunkInPlace() : ChunkHeader<CharT>{nullptr, 0, DataLength} { }
     };
 
-    template<>
-    struct ChunkInPlace<0> : public ChunkHeader
+    template<typename CharT>
+    struct ChunkInPlace<CharT, 0> : public ChunkHeader<CharT>
     {
-        ChunkInPlace() : ChunkHeader{nullptr, 0, 0} { }
+        ChunkInPlace() : ChunkHeader<CharT>{nullptr, 0, 0} { }
     };
 }
 
@@ -361,9 +388,9 @@ public:
     using const_pointer = const char_type*;
 
 private:
-    using Chunk = detail::Chunk;
-    using ChunkHeader = detail::ChunkHeader;
-    template<int N> using ChunkInPlace = detail::ChunkInPlace<N>;
+    using Chunk = detail::Chunk<char_type>;
+    using ChunkHeader = detail::ChunkHeader<char_type>;
+    template<int N> using ChunkInPlace = detail::ChunkInPlace<char_type, N>;
 
 public:
     AllocOrig get_allocator() const noexcept { return AllocProvider::get_original_allocator(); }
@@ -412,7 +439,7 @@ public:
             size -= chunk->reserved - chunk->consumed;
             assert(size > 0);
             if (chunk->next == nullptr) {
-                chunk->next = allocChunk(determineNextChunkSize(size));
+                chunk->next = allocChunk(size);
             }
         }
     }
@@ -428,8 +455,8 @@ public:
     {
         assert(ch != '\0');
         for (auto left = count; left > 0;) {
-            const auto claimed = claim(left, 1);
-            for(size_type i = 0; i < claimed.second; ++i) {
+            const auto claimed = claim(1, left);
+            for (size_type i = 0; i < claimed.second; ++i) {
                 claimed.first[i] = ch;
             }
             left -= claimed.second;
@@ -440,56 +467,72 @@ public:
     template<size_type StrSizeWith0>
     basic_stringbuilder& append(const char_type(&str)[StrSizeWith0])
     {
+        assert(str[StrSizeWith0-1] == 0);
         return append(str, StrSizeWith0 - 1);
     }
 
     template<size_type N>
-    basic_stringbuilder& append(const std::array<char_type, N>& arr) noexcept
+    basic_stringbuilder& append(const std::array<char_type, N>& arr)
     {
         return append(arr.data(), N);
     }
 
-    basic_stringbuilder& append(const char_type* str, size_type size) noexcept
+    basic_stringbuilder& append(const char_type* str, size_type size)
     {
-        for (auto left = size; left > 0;)
-        {
-            const auto claimed = claim(left, 1);
-            Traits::copy(claimed.first, &str[size - left], claimed.second);
-            left -= claimed.second;
-        }
+        Traits::copy(claim(size), str, size);
         return *this;
     }
 
-    basic_stringbuilder& append_c_str(const char_type* str, size_type size) noexcept
+    basic_stringbuilder& append_c_str(const char_type* str, size_type size)
     {
         return append(str, size);
     }
 
-    basic_stringbuilder& append_c_str(const char_type* str) noexcept
+    template<bool Prefetch = false>
+    basic_stringbuilder& append_c_str(const char_type* str)
     {
+        if (Prefetch) prefetchWrite(&tailChunk->data[tailChunk->consumed]);
         return append(str, Traits::length(str));
     }
 
+    basic_stringbuilder& append_c_str_progressive(const char_type* str)
+    {
+        while (true) {
+            auto claimed = claim(1, 64);
+            auto dst = claimed.first;
+            const auto dstEnd = dst + claimed.second;
+            while (dst < dstEnd) {
+                if (*str == 0) {
+                    reclaim(dstEnd - dst);
+                    return *this;
+                }
+                *(dst++) = *(str++);
+            }
+        }
+        assert(false);
+        return *this;
+    }
+
     template<typename OtherTraits, typename OtherAlloc>
-    basic_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str) noexcept
+    basic_stringbuilder& append(const std::basic_string<char_type, OtherTraits, OtherAlloc>& str)
     {
         return append(str.data(), str.size());
     }
 
     template<typename OtherTraits>
-    basic_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv) noexcept
+    basic_stringbuilder& append(const std::basic_string_view<char_type, OtherTraits>& sv)
     {
         return append(sv.data(), sv.size());
     }
 
     template<size_type OtherMaxSize, bool OtherForward, typename OtherTraits>
-    basic_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& sb) noexcept
+    basic_stringbuilder& append(const basic_inplace_stringbuilder<char_type, OtherMaxSize, OtherForward, OtherTraits>& sb)
     {
         return append(sb.str_view());
     }
 
     template<size_type OtherInPlaceSize, typename OtherTraits, typename OtherAlloc>
-    basic_stringbuilder& append(const basic_stringbuilder<char_type, OtherInPlaceSize, OtherTraits, OtherAlloc>& sb) noexcept
+    basic_stringbuilder& append(const basic_stringbuilder<char_type, OtherInPlaceSize, OtherTraits, OtherAlloc>& sb)
     {
         size_type size = sb.size();
         reserve(size);
@@ -532,72 +575,143 @@ public:
 
     auto str() const
     {
-        auto str = std::basic_string<char_type>(static_cast<size_t>(size()), '\0');
-        size_type consumed = 0;
+        const auto size0 = size();
+        auto str = std::basic_string<char_type>{};
+        str.reserve(size0);
         for (const Chunk* chunk = headChunk(); chunk != nullptr; chunk = chunk->next)
         {
-            Traits::copy(&str[consumed], chunk->data, chunk->consumed);
-            consumed += chunk->consumed;
+            str.append(chunk->data, chunk->consumed);
         }
         return str;
     }
 
+    bool is_linear() const
+    {
+        const auto* chunk = headChunk();
+        bool has_data = chunk->consumed > 0;
+        while (chunk->next) {
+            chunk = chunk->next;
+            if (chunk->consumed > 0) {
+                if (has_data)
+                    return false;
+                has_data = true;
+            }
+        }
+        return true;
+    }
+
+    std::string_view str_view() const
+    {
+        assert(is_linear());
+        const auto* chunk = headChunk();
+        while (chunk->consumed == 0) {
+            chunk = chunk->next;
+            assert(chunk != nullptr);
+        }
+        return std::basic_string_view<char_type>{ chunk->data, chunk->consumed };
+    }
+
 private:
-    size_type roundToL1DataCacheLine(size_type size)
+    Chunk* headChunk() noexcept { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
+    const Chunk* headChunk() const noexcept { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
+
+    char_type* claim(size_type exact)
+    {
+        if (unlikely(tailChunk->reserved - tailChunk->consumed < exact))
+            prepareSpace(exact);
+
+        char_type* const claimedChars = &tailChunk->data[tailChunk->consumed];
+        tailChunk->consumed += exact;
+        return claimedChars;
+    }
+
+    std::pair<char_type*, size_type> claim(size_type minimum, size_type maximum)
+    {
+        assert(maximum >= minimum);
+        assert(tailChunk->reserved >= tailChunk->consumed);
+
+        if (unlikely(tailChunk->reserved - tailChunk->consumed < minimum))
+            prepareSpace(minimum, maximum);
+
+        assert(tailChunk->reserved >= tailChunk->consumed);
+        assert(minimum <= tailChunk->reserved - tailChunk->consumed);
+
+        const size_type claimedSize = std::min(maximum, tailChunk->reserved - tailChunk->consumed);
+        const auto claimed = std::make_pair(&tailChunk->data[tailChunk->consumed], claimedSize);
+        tailChunk->consumed += claimedSize;
+        return claimed;
+    }
+
+    Char& claimOne()
+    {
+        if (unlikely(tailChunk->reserved - tailChunk->consumed < 1))
+            prepareSpace(1);
+        return tailChunk->data[tailChunk->consumed++];
+    }
+
+    void reclaim(size_t exact)
+    {
+        assert(tailChunk->consumed >= exact);
+        tailChunk->consumed -= exact;
+    }
+
+    noinline void prepareSpace(size_type minimum)
+    {
+        if (tailChunk->next == nullptr) {
+            tailChunk->next = allocChunk(minimum);
+            tailChunk = tailChunk->next;
+        }
+        else {
+            while (true) {
+                tailChunk = tailChunk->next;
+                assert(tailChunk->consumed == 0);
+                if (tailChunk->reserved >= minimum)
+                    return;
+
+                if (tailChunk->next == nullptr)
+                    tailChunk->next = allocChunk(minimum);
+            }
+        }
+    }
+
+    noinline void prepareSpace(size_type minimum, size_type maximum)
+    {
+        if (tailChunk->next == nullptr) {
+            tailChunk->next = allocChunk(maximum);
+            tailChunk = tailChunk->next;
+        }
+        else
+        {
+            while (true) {
+                tailChunk = tailChunk->next;
+                assert(tailChunk->consumed == 0);
+
+                if (tailChunk->reserved >= minimum)
+                    return;
+
+                if (tailChunk->next == nullptr)
+                    tailChunk->next = allocChunk(maximum);
+            }
+        }
+    }
+
+    size_type determineNextChunkSize(size_type minimum) const noexcept { return std::max(2 * tailChunk->reserved, minimum); }
+
+    constexpr static size_type roundToL1DataCacheLine(size_type size) noexcept
     {
         constexpr size_type l1DataCacheLineSize = 64; //std::hardware_destructive_interference_size;
         return ((l1DataCacheLineSize - 1) + size) / l1DataCacheLineSize * l1DataCacheLineSize;
     }
 
-    Chunk* allocChunk(size_type reserve)
+    Chunk* allocChunk(size_type minimum)
     {
-        assert(reserve > 0);
-        const auto chunkTotalSize = roundToL1DataCacheLine(reserve);
+        assert(minimum > 0);
+        const auto chunkTotalSize = roundToL1DataCacheLine(determineNextChunkSize(minimum) + sizeof(ChunkHeader));
         auto* rawChunk = AllocTraits::allocate(AllocProvider::get_rebound_allocator(), chunkTotalSize, tailChunk);
         auto* chunk = reinterpret_cast<Chunk*>(rawChunk);
         AllocTraits::construct(AllocProvider::get_rebound_allocator(), chunk, chunkTotalSize - sizeof(ChunkHeader));
         return chunk;
     }
-
-    Chunk* headChunk() noexcept { return reinterpret_cast<Chunk*>(&headChunkInPlace); }
-    const Chunk* headChunk() const noexcept { return reinterpret_cast<const Chunk*>(&headChunkInPlace); }
-
-    std::pair<Char*, size_type> claim(size_type maximum, size_type minimum)
-    {
-        assert(maximum >= minimum);
-        auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
-        assert(tailChunkLeft >= 0);
-        if (tailChunkLeft < minimum)
-        {
-            if (tailChunk->next == nullptr) {
-                tailChunk->next = allocChunk(determineNextChunkSize(maximum - tailChunkLeft));
-            }
-            tailChunk = tailChunk->next;
-            tailChunkLeft = tailChunk->reserved;
-        }
-
-        assert(tailChunkLeft >= minimum);
-        const size_type claimed = std::min(tailChunkLeft, maximum);
-        auto retval = std::make_pair(static_cast<Char*>(tailChunk->data) + tailChunk->consumed, claimed);
-        tailChunk->consumed += claimed;
-        return retval;
-    }
-
-    Char& claimOne()
-    {
-        auto tailChunkLeft = tailChunk->reserved - tailChunk->consumed;
-        assert(tailChunkLeft >= 0);
-        if (tailChunkLeft < 1)
-        {
-            if (tailChunk->next == nullptr) {
-                tailChunk->next = allocChunk(determineNextChunkSize(1));
-            }
-            tailChunk = tailChunk->next;
-        }
-        return *(static_cast<Char*>(tailChunk->data) + tailChunk->consumed++);
-    }
-
-    size_type determineNextChunkSize(size_type minimum) const noexcept { return std::max(2 * tailChunk->reserved, minimum); }
 
 private:
     ChunkInPlace<InPlaceSize> headChunkInPlace;

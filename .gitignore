@@ -37,3 +37,5 @@ CMakeSettings.json
 # Build
 x64
 build
+build-clang
+build-gcc
