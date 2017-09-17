@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <strstream>
 #include <iostream>
+#include <cstddef>
 #include <chrono>
 #include <vector>
 #ifdef WIN32
@@ -860,7 +861,7 @@ struct SbTR
         const auto size = std::char_traits<char>::length(str);
         if (Likely)
         {
-            if (unlikely(dataEnd - tail < static_cast<ptrdiff_t>(size))) {
+            if (unlikely(dataEnd - tail < static_cast<std::ptrdiff_t>(size))) {
                 // Will not happen, but don't tell it to the compiler.
                 //spaceLeft += tail - data.get();
                 tail = data.get();
@@ -869,7 +870,7 @@ struct SbTR
         }
         else
         {
-            if (dataEnd - tail < static_cast<ptrdiff_t>(size)) {
+            if (dataEnd - tail < static_cast<std::ptrdiff_t>(size)) {
                 // Will not happen, but don't tell it to the compiler.
                 //spaceLeft += tail - data.get();
                 tail = data.get();
