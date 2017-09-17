@@ -40,7 +40,7 @@ void ProvideResult(std::string&& str)
     vcstr = str.c_str();
 }
 
-void ProvideResult(std::string_view&& str_view)
+void ProvideResult(std::basic_string_view<char>&& str_view)
 {
     vsize = str_view.size();
     vcstr = str_view.data();
@@ -666,7 +666,7 @@ struct SbI
         return { data, data + consumed };
     }
 
-    std::string_view str_view() const noexcept {
+    std::basic_string_view<char> str_view() const noexcept {
         return { data, consumed };
     }
 };
