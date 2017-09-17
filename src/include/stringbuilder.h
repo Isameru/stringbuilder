@@ -600,7 +600,7 @@ public:
         return true;
     }
 
-    std::string_view str_view() const
+    auto str_view() const
     {
         assert(is_linear());
         const auto* chunk = headChunk();
