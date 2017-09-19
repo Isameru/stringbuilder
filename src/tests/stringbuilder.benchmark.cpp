@@ -186,7 +186,7 @@ void benchmarkIntegerSequence()
 }
 
 
-std::array<const char*, 33> words{ "There", " ", "are", " ", "only", " ", "10", " ", "people", " ", "in", " ", "the", " ", "world", ":", " ", "those", " ", "who", " ", "know", " ", "binary", " ", "and", " ", "those", " ", "who", " ", "don't", ". " };
+std::array<const char*, 33> words{ "There", " ", "are", " ", "only", " ", "10", " ", "people", " ", "in", " ", "the", " ", "world", ":", " ", "those", " ", "who", " ", "know", " ", "binary", " ", "and", " ", "those", " ", "who", " ", "don't", "." };
 const char* g_joke = nullptr;
 
 void benchmarkBook()
@@ -223,13 +223,14 @@ void benchmarkBook()
             for (int w = 0; w < (int)words.size(); ++w)
                 sb << words[w];
         }
+        sb << " ";
         return sb.str();
     });
 
     Benchmark("stringbuilder<> << [N]", BenchmarkTiming::Best, iterCount, miniIterCount, [=]() {
         stringbuilder<> sb;
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << ". ";
+            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << "." << " ";
         }
         return sb.str();
     });
@@ -238,7 +239,7 @@ void benchmarkBook()
         stringbuilder<> sb;
         sb.reserve(1000000);
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << ". ";
+            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << "." << " ";
         }
         return sb.str();
     });
@@ -254,7 +255,7 @@ void benchmarkBook()
     Benchmark("stringbuilder<4kB> << [N]", BenchmarkTiming::Best, iterCount, miniIterCount, [=]() {
         stringbuilder<4 * 1024> sb;
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << ". ";
+            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << "." << " ";
         }
         return sb.str();
     });
@@ -270,7 +271,7 @@ void benchmarkBook()
     Benchmark("stringbuilder<64kB> << [N]", BenchmarkTiming::Best, iterCount, miniIterCount, [=]() {
         stringbuilder<64 * 1024> sb;
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << ". ";
+            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << "." << " ";
         }
         return sb.str();
     });
@@ -286,7 +287,7 @@ void benchmarkBook()
     Benchmark("stringbuilder<512kB> << [N]", BenchmarkTiming::Best, iterCount, miniIterCount, [=]() {
         stringbuilder<512 * 1024> sb;
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << ". ";
+            sb << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << "." << " ";
         }
         return sb.str();
     });
@@ -302,7 +303,7 @@ void benchmarkBook()
     Benchmark("string.append([N])", BenchmarkTiming::Best, iterCount, miniIterCount, [=]() {
         std::string s;
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            s.append("There").append(" ").append("are").append(" ").append("only").append(" ").append("10").append(" ").append("people").append(" ").append("in").append(" ").append("the").append(" ").append("world").append(":").append(" ").append("those").append(" ").append("who").append(" ").append("know").append(" ").append("binary").append(" ").append("and").append(" ").append("those").append(" ").append("who").append(" ").append("don't").append(". ");
+            s.append("There").append(" ").append("are").append(" ").append("only").append(" ").append("10").append(" ").append("people").append(" ").append("in").append(" ").append("the").append(" ").append("world").append(":").append(" ").append("those").append(" ").append("who").append(" ").append("know").append(" ").append("binary").append(" ").append("and").append(" ").append("those").append(" ").append("who").append(" ").append("don't").append(".").append(" ");
         }
         return s;
     });
@@ -311,7 +312,7 @@ void benchmarkBook()
         std::string s;
         s.reserve(1000000);
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            s.append("There").append(" ").append("are").append(" ").append("only").append(" ").append("10").append(" ").append("people").append(" ").append("in").append(" ").append("the").append(" ").append("world").append(":").append(" ").append("those").append(" ").append("who").append(" ").append("know").append(" ").append("binary").append(" ").append("and").append(" ").append("those").append(" ").append("who").append(" ").append("don't").append(". ");
+            s.append("There").append(" ").append("are").append(" ").append("only").append(" ").append("10").append(" ").append("people").append(" ").append("in").append(" ").append("the").append(" ").append("world").append(":").append(" ").append("those").append(" ").append("who").append(" ").append("know").append(" ").append("binary").append(" ").append("and").append(" ").append("those").append(" ").append("who").append(" ").append("don't").append(".").append(" ");
         }
         return s;
     });
@@ -327,7 +328,7 @@ void benchmarkBook()
     Benchmark("stringstream << [N]", BenchmarkTiming::Best, iterCount, miniIterCount, [=]() {
         std::stringstream ss;
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            ss << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << ". ";
+            ss << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << "." << " ";
         }
         return ss.str();
     });
@@ -347,7 +348,7 @@ void benchmarkBook()
         ss.str("");
         ss.clear();
         for (size_t i = 0; i < wordCount; i += words.size()) {
-            ss << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << ". ";
+            ss << "There" << " " << "are" << " " << "only" << " " << "10" << " " << "people" << " " << "in" << " " << "the" << " " << "world" << ":" << " " << "those" << " " << "who" << " " << "know" << " " << "binary" << " " << "and" << " " << "those" << " " << "who" << " " << "don't" << "." << " ";
         }
         return ss.str();
     });
@@ -375,7 +376,7 @@ void benchmarkQuote()
 
     constexpr size_t iterCount = 500;
     constexpr size_t miniIterCount = 500;
-    
+
     Benchmark("empty", BenchmarkTiming::Mean, iterCount, miniIterCount, [=]() {
         return std::string{};
     });
