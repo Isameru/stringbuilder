@@ -1,42 +1,34 @@
 # This file originates from the work of Mateusz Pusz (https://github.com/mpusz/opt) where is licensed under MIT License.
 
-version: 1.0.{build}
-
-branches:
-  except:
-    - gh-pages
-
-skip_commits:
-  message: /\[ci skip\]/
+version: '1.1.{build}'
 
 image: Visual Studio 2017
 
+environment:
+  matrix:
+    - GENERATOR : "Visual Studio 15 Win64"
+      CONFIG    : Debug
+
+    - GENERATOR : "Visual Studio 15 Win64"
+      CONFIG    : Release
+
 platform:
   - x64
- 
-configuration:
-  - Release
-  - Debug
-
-init:
-  - git config --global core.autocrlf input
-
-clone_depth: 5
-
-install:
-  - git submodule update --init --recursive
 
 before_build:
-  - mkdir build && cd build
-  - cmake -G"Visual Studio 15 2017 Win64" ..
+  - cd "%APPVEYOR_BUILD_FOLDER%"
+  - mkdir _build
+  - cd _build
+  - cmake -G"%GENERATOR%" -DCMAKE_BUILD_TYPE=%CONFIG% ..
 
 build:
-  parallel: true
-  project: $(APPVEYOR_BUILD_FOLDER)\build\$(APPVEYOR_PROJECT_NAME).sln
+  project: "%APPVEYOR_BUILD_FOLDER%\\_build\\%APPVEYOR_PROJECT_NAME%.sln"
 
 test_script:
-  - '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.test.exe --gtest_output=xml:stringbuilder.test.xml'
-  - '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.benchmark.exe'
+  - "%APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIG%\\stringbuilder.c++17.test.exe -r xml -o %APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIG%\\stringbuilder.c++17.test.xml"
+  - "%APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIG%\\stringbuilder.c++17.benchmark.exe"
+  - pwd && ls -la
 
 on_finish:
-  - ps: (new-object net.webclient).UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path .\stringbuilder.test.xml))
+  - cd %APPVEYOR_BUILD_FOLDER%\\_build
+  - ps: (new-object net.webclient).UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path ./test/Debug/stringbuilder.c++17.test.xml))

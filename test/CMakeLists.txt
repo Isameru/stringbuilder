@@ -1,0 +1,36 @@
+
+add_executable(stringbuilder.c++17.test stringbuilder.test.cpp)
+target_compile_features(stringbuilder.c++17.test PUBLIC cxx_std_17)
+set_target_properties(stringbuilder.c++17.test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(stringbuilder.c++17.test stringbuilder)
+add_test(NAME stringbuilder.c++17.test COMMAND stringbuilder.c++17.test)
+
+add_executable(stringbuilder.c++14.test stringbuilder.test.cpp)
+target_compile_features(stringbuilder.c++14.test PUBLIC cxx_std_14)
+set_target_properties(stringbuilder.c++14.test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(stringbuilder.c++14.test stringbuilder)
+add_test(NAME stringbuilder.c++14.test COMMAND stringbuilder.c++14.test)
+
+add_executable(stringbuilder.c++11.test stringbuilder.test.cpp)
+target_compile_features(stringbuilder.c++11.test PUBLIC cxx_std_11)
+set_target_properties(stringbuilder.c++11.test PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(stringbuilder.c++11.test stringbuilder)
+add_test(NAME stringbuilder.c++11.test COMMAND stringbuilder.c++11.test)
+
+add_executable(stringbuilder.c++17.benchmark stringbuilder.benchmark.cpp)
+target_compile_features(stringbuilder.c++17.benchmark PUBLIC cxx_std_17)
+set_target_properties(stringbuilder.c++17.benchmark PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(stringbuilder.c++17.benchmark stringbuilder)
+add_test(NAME stringbuilder.c++17.benchmark COMMAND stringbuilder.c++17.benchmark)
+
+add_executable(stringbuilder.c++14.benchmark stringbuilder.benchmark.cpp)
+target_compile_features(stringbuilder.c++14.benchmark PUBLIC cxx_std_14)
+set_target_properties(stringbuilder.c++14.benchmark PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(stringbuilder.c++14.benchmark stringbuilder)
+add_test(NAME stringbuilder.c++14.benchmark COMMAND stringbuilder.c++14.benchmark)
+
+add_executable(stringbuilder.c++11.benchmark stringbuilder.benchmark.cpp)
+target_compile_features(stringbuilder.c++11.benchmark PUBLIC cxx_std_11)
+set_target_properties(stringbuilder.c++11.benchmark PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(stringbuilder.c++11.benchmark stringbuilder)
+add_test(NAME stringbuilder.c++11.benchmark COMMAND stringbuilder.c++11.benchmark)
