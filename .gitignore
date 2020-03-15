@@ -1,41 +1,6 @@
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# In-project CMake deployment
+/build*
+/_*
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# Visual Studio
+# IDE
 .vs
-
-# CMake
-CMakeSettings.json
-
-# Build
-x64
-build
-build-clang
-build-gcc

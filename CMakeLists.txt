@@ -1,35 +1,17 @@
-cmake_minimum_required(VERSION 2.8)
 
-set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+cmake_minimum_required(VERSION 3.1...3.10)
 
-project(stringbuilder C CXX)
+project(stringbuilder
+    VERSION     1.1
+    DESCRIPTION "Fast, efficient and convenient alternative to std::stringstream and std::string concatenation."
+    LANGUAGES   CXX)
 
-set(VERSION_MAJOR 0)
-set(VERSION_MINOR 0)
-set(VERSION_PATCH 1)
-
-if(MSVC)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest")
-#elseif(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0)
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
-else()
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
-endif()
-
-set(CMAKE_CXX_STANDARD_REQUIRED on)
-
-set(gtest_force_shared_crt ON CACHE BOOL "Use shared (DLL) run-time lib even when Google Test is built as static lib.")
-if(MSVC)
-add_definitions(-DGTEST_LANG_CXX11=1 -DGTEST_HAS_TR1_TUPLE=0)
-endif()
-set(BUILD_GTEST on)
-set(BUILD_GMOCK off)
-add_subdirectory(src/external/googletest EXLUCDE_FROM_ALL)
-add_library(google::test ALIAS gtest_main)
-
-set_target_properties(gtest gtest_main PROPERTIES FOLDER "Google Test")
+add_library(stringbuilder INTERFACE)
+target_compile_features(stringbuilder INTERFACE cxx_std_11)
+target_include_directories(stringbuilder INTERFACE include)
 
 # Enable Code Coverage
+# TODO: Make it right.
 if(CODE_COVERAGE)
     if(MSVC)
         message(WARNING "Code Coverage on Visual Studio not supported")
@@ -38,10 +20,9 @@ if(CODE_COVERAGE)
     endif()
 endif()
 
-if(PERF)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fno-exceptions -fno-rtti")
+if(CMAKE_PROJECT_NAME STREQUAL stringbuilder)
+    include(CTest)
+    if(BUILD_TESTING)
+        add_subdirectory(test)
+    endif()
 endif()
-
-include_directories(src/include)
-
-add_subdirectory(src/tests)

@@ -10,15 +10,17 @@
 This utility is a fast, efficient and convenient alternative to std::stringstream and std::string concatenation.
 It was inspired by `System.Text.StringBuilder` class available in .NET Framework Class Library, where an instance of `StringBuilder` class is created and its content built by successive calls to `Append()` method.
 
-## Dependencies
+The library takes advantage of C++17 features (most notably `std::string_view`), but will also work with C++14 and C++11 in limited form.
 
-The library takes advantage of C++17 features so a fairly modern compiler is needed (Visual Studio 2017 will do).
+You may find this library not sufficient to your needs, as it does not implement `std::ostream`, nor honor the stream formatters (e.g. `std::hex`). A lot of features need to be added to this project to make it a decent one.
 
 ## Installation
 
 ```cpp
 #include <stringbuilder.h>
 ```
+
+Place `stringbuilder.h` somewhere in your source tree or include the project directory with *CMake* and link with the target `stringbuilder`.
 
 ## Basic Usage
 
@@ -63,7 +65,7 @@ auto sb = inplace_stringbuilder<52>{};
 `inplace_stringbuilder<MaxSize>` is a pure in-place character storage which can hold up to `MaxSize` characters and no more.
 Exceeding the capacity of this container leads to an assertion failure or memory corruption so it must be used with caution.
 
-## `make_string`
+## `make_string` *(C++14)*
 
 Suppose we need to build an error message - we can do it this way:
 

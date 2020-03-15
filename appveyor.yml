@@ -1,6 +1,6 @@
 # This file originates from the work of Mateusz Pusz (https://github.com/mpusz/opt) where is licensed under MIT License.
 
-version: 1.0.{build}
+version: 1.1.{build}
 
 branches:
   except:
@@ -27,16 +27,16 @@ install:
   - git submodule update --init --recursive
 
 before_build:
-  - mkdir build && cd build
+  - mkdir _build && cd _build
   - cmake -G"Visual Studio 15 2017 Win64" ..
 
 build:
   parallel: true
-  project: $(APPVEYOR_BUILD_FOLDER)\build\$(APPVEYOR_PROJECT_NAME).sln
+  project: $(APPVEYOR_BUILD_FOLDER)\_build\$(APPVEYOR_PROJECT_NAME).sln
 
 test_script:
-  - '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.test.exe --gtest_output=xml:stringbuilder.test.xml'
-  - '%APPVEYOR_BUILD_FOLDER%\build\src\tests\%CONFIGURATION%\stringbuilder.benchmark.exe'
+  - '%APPVEYOR_BUILD_FOLDER%\_build\test\%CONFIGURATION%\stringbuilder.c++17.test.exe -r xml -o stringbuilder.c++17.test.xml'
+  - '%APPVEYOR_BUILD_FOLDER%\_build\test\%CONFIGURATION%\stringbuilder.c++17.benchmark.exe'
 
 on_finish:
-  - ps: (new-object net.webclient).UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path .\stringbuilder.test.xml))
+  - ps: (new-object net.webclient).UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path .\stringbuilder.c++17.test.xml))
