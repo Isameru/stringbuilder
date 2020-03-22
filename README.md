@@ -18,6 +18,7 @@ You may find this library not sufficient to your needs, as it does not implement
 
 ```cpp
 #include <stringbuilder.h>
+using namespace sbldr;  // Worry not - it will not pollute your scope with unnecessary symbols (check for yourself!)
 ```
 
 Place `stringbuilder.h` somewhere in your source tree or include the project directory with *CMake* and link with the target `stringbuilder`.

@@ -3,7 +3,9 @@
 #define CATCH_CONFIG_MAIN
 #include "catch.hpp"
 
-TEST_CASE("Riddle", "[InPlaceStringBuilder]")
+using namespace sbldr;
+
+TEST_CASE("inplace_stringbuilder.Riddle", "[inplace_stringbuilder]")
 {
     auto sb = inplace_stringbuilder<34>{};
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
@@ -12,7 +14,7 @@ TEST_CASE("Riddle", "[InPlaceStringBuilder]")
     REQUIRE(sb.c_str() == std::string{"There are 8 bits in a single byte."});
 }
 
-TEST_CASE("RiddleReversed", "[InPlaceStringBuilder]")
+TEST_CASE("inplace_stringbuilder.RiddleReversed", "[inplace_stringbuilder]")
 {
     auto sb = inplace_stringbuilder<34, false>{};
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
@@ -20,7 +22,17 @@ TEST_CASE("RiddleReversed", "[InPlaceStringBuilder]")
     REQUIRE(sb.c_str() == std::string{".single byte bits in a 8are  There"});
 }
 
-TEST_CASE("EncodeInteger", "[InPlaceStringBuilder]")
+TEST_CASE("inplace_stringbuilder.AppendInPlaceStringBuilder", "[inplace_stringbuilder]")
+{
+    auto sb = inplace_stringbuilder<32>{};
+    sb << "123 ";
+    sb << sb;
+    sb << sb;
+    sb << sb;
+    REQUIRE(std::to_string(sb) == "123 123 123 123 123 123 123 123 ");
+}
+
+TEST_CASE("inplace_stringbuilder.EncodeInteger", "[inplace_stringbuilder]")
 {
     {   auto sb = inplace_stringbuilder<1>{};
         sb << 0;
@@ -48,7 +60,7 @@ TEST_CASE("EncodeInteger", "[InPlaceStringBuilder]")
     }
 }
 
-TEST_CASE("EncodeOther", "[InPlaceStringBuilder]")
+TEST_CASE("inplace_stringbuilder.EncodeOther", "[inplace_stringbuilder]")
 {
     {   auto sb = inplace_stringbuilder<11, false>{};
         sb << -123.4567;
@@ -56,35 +68,44 @@ TEST_CASE("EncodeOther", "[InPlaceStringBuilder]")
     }
 }
 
-TEST_CASE("Riddle_InPlace0", "[StringBuilder]")
+TEST_CASE("inplace_stringbuilder.ostream", "[inplace_stringbuilder]")
+{
+    auto sb = inplace_stringbuilder<17>{};
+    sb << "Everything " << 4 << " You!";
+    std::stringstream ss;
+    ss << sb;
+    REQUIRE(std::to_string(sb) == ss.str());
+}
+
+TEST_CASE("stringbuilder.Riddle_InPlace0", "[stringbuilder]")
 {
     auto sb = stringbuilder<0>{};
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     REQUIRE(std::to_string(sb) == "There are 8 bits in a single byte.");
 }
 
-TEST_CASE("Riddle_InPlace1", "[StringBuilder]")
+TEST_CASE("stringbuilder.Riddle_InPlace1", "[stringbuilder]")
 {
     auto sb = stringbuilder<1>{};
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     REQUIRE(std::to_string(sb) == "There are 8 bits in a single byte.");
 }
 
-TEST_CASE("Riddle_InPlace10", "[StringBuilder]")
+TEST_CASE("stringbuilder.Riddle_InPlace10", "[stringbuilder]")
 {
     auto sb = stringbuilder<10>{};
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     REQUIRE(std::to_string(sb) == "There are 8 bits in a single byte.");
 }
 
-TEST_CASE("Riddle_InPlace100", "[StringBuilder]")
+TEST_CASE("stringbuilder.Riddle_InPlace100", "[stringbuilder]")
 {
     stringbuilder<100> sb;
     sb << "There" << ' ' << "are " << 8 << " bits in a " << "single byte" << '.';
     REQUIRE(std::to_string(sb) == "There are 8 bits in a single byte.");
 }
 
-TEST_CASE("Reserve", "[StringBuilder]")
+TEST_CASE("stringbuilder.Reserve", "[stringbuilder]")
 {
     auto sb = stringbuilder<5>{};
     sb << "abcd";
@@ -93,7 +114,7 @@ TEST_CASE("Reserve", "[StringBuilder]")
     REQUIRE(std::to_string(sb) == "abcdxyzw");
 }
 
-TEST_CASE("AppendCharMulti", "[StringBuilder]")
+TEST_CASE("stringbuilder.AppendCharMulti", "[stringbuilder]")
 {
     auto sb = stringbuilder<5>{};
     sb.append(10, '.');
@@ -102,7 +123,7 @@ TEST_CASE("AppendCharMulti", "[StringBuilder]")
     REQUIRE(std::to_string(sb) == std::to_string(ipsb));
 }
 
-TEST_CASE("AppendStringBuilder", "[StringBuilder]")
+TEST_CASE("stringbuilder.AppendStringBuilder", "[stringbuilder]")
 {
     auto sb = stringbuilder<5>{};
     sb << "123 ";
@@ -112,22 +133,35 @@ TEST_CASE("AppendStringBuilder", "[StringBuilder]")
     REQUIRE(std::to_string(sb) == "123 123 123 123 123 123 123 123 ");
 }
 
+TEST_CASE("stringbuilder.ostream", "[stringbuilder]")
+{
+    auto sb = stringbuilder<23>{};
+    sb << "This string makes no " << -375 << " sense!";
+    std::stringstream ss;
+    ss << sb;
+    REQUIRE(std::to_string(sb) == ss.str());
+}
+
 template<typename T>
 struct vec3 {
     T x, y, z;
 };
 
-template<typename SB, typename T>
-struct sb_appender<SB, vec3<T>> {
-    void operator()(SB& sb, const vec3<T>& v) {
-        sb << '[' << v.x << ' ' << v.y << ' ' << v.z << ']';
-    }
-};
+namespace STRINGBUILDER_NAMESPACE {
+    // TODO: Specializations of sb_appender must be in sbldr namespace.
+    //       This is a serious flaw. Get rid of it.
+    template<typename SB, typename T>
+    struct sb_appender<SB, vec3<T>> {
+        void operator()(SB& sb, const vec3<T>& v) {
+            sb << '[' << v.x << ' ' << v.y << ' ' << v.z << ']';
+        }
+    };
+}
 
 template<typename T>
 vec3<T> make_vec3(T&& x, T&& y, T&& z) { return vec3<T>{std::forward<T>(x), std::forward<T>(y), std::forward<T>(z)}; }
 
-TEST_CASE("CustomAppender", "[StringBuilder]")
+TEST_CASE("stringbuilder.CustomAppender", "[stringbuilder]")
 {
     stringbuilder<> sb;
     sb << make_vec3('x', 'y', 'z') << " :: " << make_vec3(-12, 23, -34);
@@ -135,17 +169,17 @@ TEST_CASE("CustomAppender", "[StringBuilder]")
 }
 
 #ifdef STRINGBUILDER_SUPPORTS_MAKE_STRING
-TEST_CASE("Simple", "[MakeString]")
+TEST_CASE("make_string.Simple", "[make_string]")
 {
     REQUIRE(make_string("There", ' ', "are ", 8, " bits in a ", "single byte", '.') == std::string{"There are 8 bits in a single byte."});
 }
 
-TEST_CASE("SizedStr", "[MakeString]")
+TEST_CASE("make_string.SizedStr", "[make_string]")
 {
     REQUIRE(make_string("There", ' ', "are ", 8, " bits in a ", "single ", sized_str<4>(std::string{ "byte" }), '.') == std::string{"There are 8 bits in a single byte."});
 }
 
-TEST_CASE("Constexpr_Simple", "[MakeString]")
+TEST_CASE("make_string.Constexpr_Simple", "[make_string]")
 {
     {   constexpr auto s = make_string('a', "bcd", 'x');
         REQUIRE(s.c_str() == std::string{"abcdx"});

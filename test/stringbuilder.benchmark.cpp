@@ -12,6 +12,9 @@
 #include <intrin.h>
 #endif
 
+using namespace sbldr;
+using namespace sbldr::detail;
+
 //static void escape(void* p) { asm volatile("" : : "g"(p) : "memory"); }
 volatile size_t vsize;
 volatile const char* vcstr;
@@ -22,7 +25,7 @@ void ProvideResult(std::string&& str)
     vcstr = str.c_str();
 }
 
-#if __cpp_lib_string_view
+#if STRINGBUILDER_USES_STRING_VIEW
 void ProvideResult(std::basic_string_view<char>&& str_view)
 {
     vsize = str_view.size();
@@ -651,7 +654,7 @@ struct SbI
         return { data, data + consumed };
     }
 
-#if __cpp_lib_string_view
+#if STRINGBUILDER_USES_STRING_VIEW
     std::basic_string_view<char> str_view() const noexcept {
         return { data, consumed };
     }
@@ -699,7 +702,7 @@ struct SbSR
         const auto size = std::char_traits<char>::length(str);
         if (Likely)
         {
-            if (unlikely(consumed + size > reserved)) {
+            if (STRINGBUILDER_UNLIKELY(consumed + size > reserved)) {
                 // Will not happen, but don't tell it to the compiler.
                 std::char_traits<char>::assign(data.get(), reserved, '\0');
                 consumed = 0;
@@ -777,7 +780,7 @@ struct SbCR
         const auto size = std::char_traits<char>::length(str);
         if (Likely)
         {
-            if (unlikely(chunk->consumed + size > chunk->reserved)) {
+            if (STRINGBUILDER_UNLIKELY(chunk->consumed + size > chunk->reserved)) {
                 // Will not happen, but don't tell it to the compiler.
                 std::char_traits<char>::assign(chunk->data, chunk->reserved, '\0');
                 chunk->consumed = 0;
@@ -846,7 +849,7 @@ struct SbTR
         const auto size = std::char_traits<char>::length(str);
         if (Likely)
         {
-            if (unlikely(dataEnd - tail < static_cast<std::ptrdiff_t>(size))) {
+            if (STRINGBUILDER_UNLIKELY(dataEnd - tail < static_cast<std::ptrdiff_t>(size))) {
                 // Will not happen, but don't tell it to the compiler.
                 //spaceLeft += tail - data.get();
                 tail = data.get();
@@ -891,7 +894,7 @@ struct SbTR2
         const auto size = std::char_traits<char>::length(str);
         if (Likely)
         {
-            if (unlikely(spaceLeft < size)) {
+            if (STRINGBUILDER_UNLIKELY(spaceLeft < size)) {
                 // Will not happen, but don't tell it to the compiler.
                 //spaceLeft += tail - data.get();
                 tail = data.get();
@@ -1124,7 +1127,7 @@ void benchmarkProgressiveThreshold()
             {
                 sb.append_c_str(joke);
             }
-#if __cpp_lib_string_view
+#if STRINGBUILDER_USES_STRING_VIEW
             return sb.str_view();
 #else
             return sb.str();
@@ -1138,7 +1141,7 @@ void benchmarkProgressiveThreshold()
             {
                 sb.append_c_str_progressive(joke);
             }
-#if __cpp_lib_string_view
+#if STRINGBUILDER_USES_STRING_VIEW
             return sb.str_view();
 #else
             return sb.str();

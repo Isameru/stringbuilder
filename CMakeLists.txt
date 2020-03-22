@@ -1,5 +1,8 @@
 
-cmake_minimum_required(VERSION 3.1...3.10)
+cmake_minimum_required(VERSION 3.3...3.10)
+
+find_package(Doxygen
+    OPTIONAL_COMPONENTS dot mscgen dia)
 
 project(stringbuilder
     VERSION     1.1
@@ -9,6 +12,11 @@ project(stringbuilder
 add_library(stringbuilder INTERFACE)
 target_compile_features(stringbuilder INTERFACE cxx_std_11)
 target_include_directories(stringbuilder INTERFACE include)
+
+if(CMAKE_PROJECT_NAME STREQUAL stringbuilder AND DOXYGEN_FOUND)
+    set(DOXYGEN_GENERATE_HTML YES)
+    doxygen_add_docs(stringbuilder.doc include/stringbuilder.h ALL)
+endif()
 
 # Enable Code Coverage
 # TODO: Make it right.

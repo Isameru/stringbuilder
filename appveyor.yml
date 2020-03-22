@@ -7,28 +7,28 @@ image: Visual Studio 2017
 environment:
   matrix:
     - GENERATOR : "Visual Studio 15 Win64"
-      CONFIG    : Debug
-
-    - GENERATOR : "Visual Studio 15 Win64"
-      CONFIG    : Release
 
 platform:
   - x64
 
+configuration:
+  - Debug
+  - Release
+
 before_build:
   - cd "%APPVEYOR_BUILD_FOLDER%"
-  - mkdir _build
-  - cd _build
-  - cmake -G"%GENERATOR%" -DCMAKE_BUILD_TYPE=%CONFIG% ..
+  - mkdir _build && cd _build
+  - cmake -G"%GENERATOR%" -DCMAKE_BUILD_TYPE=%CONFIGURATION% ..
 
 build:
   project: "%APPVEYOR_BUILD_FOLDER%\\_build\\%APPVEYOR_PROJECT_NAME%.sln"
 
 test_script:
-  - "%APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIG%\\stringbuilder.c++17.test.exe -r xml -o %APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIG%\\stringbuilder.c++17.test.xml"
-  - "%APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIG%\\stringbuilder.c++17.benchmark.exe"
-  - pwd && ls -la
+  - cd "%APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIGURATION%"
+  - ".\\stringbuilder.c++14.test.exe -r xml -o %APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIGURATION%\\stringbuilder.c++14.test.xml"
+  - ".\\stringbuilder.c++17.test.exe -r xml -o %APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIGURATION%\\stringbuilder.c++17.test.xml"
+  - ".\\stringbuilder.c++17.benchmark.exe"
 
 on_finish:
-  - cd %APPVEYOR_BUILD_FOLDER%\\_build
-  - ps: (new-object net.webclient).UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path ./test/Debug/stringbuilder.c++17.test.xml))
+  - cd "%APPVEYOR_BUILD_FOLDER%\\_build\\test\\%CONFIGURATION%"
+  - ps: (new-object net.webclient).UploadFile("https://ci.appveyor.com/api/testresults/junit/$($env:APPVEYOR_JOB_ID)", (Resolve-Path stringbuilder.c++17.test.xml))
