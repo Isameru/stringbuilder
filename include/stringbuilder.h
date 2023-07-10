@@ -95,7 +95,7 @@ namespace STRINGBUILDER_NAMESPACE
 {
     namespace detail
     {
-        void prefetchWrite(const void* p)
+        inline void prefetchWrite(const void* p)
         {
 #if defined(__GNUC__)
             __builtin_prefetch(p, 1);
